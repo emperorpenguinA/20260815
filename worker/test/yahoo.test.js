@@ -234,6 +234,20 @@ test("normalizeJapanSearch keeps a foreign ticker code as-is", () => {
   assert.deepEqual(results, [{ symbol: "AAPL", name: "アップル", exchange: "NASDAQ", type: "EQUITY" }]);
 });
 
+test("normalizeJapanSearch keeps a currency-pair code (contains '=') as-is and types it CURRENCY", () => {
+  const state = {
+    mainSearchList: {
+      results: [{ code: "TRYJPY=X", name: "トルコ　リラ / 日本　円", marketName: "外国為替" }],
+    },
+  };
+
+  const results = normalizeJapanSearch(state);
+
+  assert.deepEqual(results, [
+    { symbol: "TRYJPY=X", name: "トルコ　リラ / 日本　円", exchange: "外国為替", type: "CURRENCY" },
+  ]);
+});
+
 test("normalizeJapanSearch filters out investment trusts (mutual funds), which use a different symbol namespace", () => {
   const state = {
     mainSearchList: {
