@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>投資動向ダッシュボード</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<header class="site-header">
+  <h1>投資動向ダッシュボード</h1>
+  <nav>
+    <a href="glossary.html">用語集</a>
+  </nav>
+</header>
+<main>
+  <div id="page-banner" class="page-banner" hidden>
+    データを取得できませんでした。ネットワーク状況を確認し、更新ボタンで再試行してください。
+  </div>
+  <div class="toolbar">
+    <input type="text" id="search-input" placeholder="銘柄を検索(例: トヨタ、AAPL)" />
+    <button id="search-button" type="button">検索</button>
+    <button id="refresh-button" type="button">更新</button>
+  </div>
+  <ul id="search-results" class="search-results"></ul>
+  <div id="watchlist-grid" class="watchlist-grid"></div>
+</main>
+<script type="module" src="js/dashboard.js"></script>
+</body>
+</html>
