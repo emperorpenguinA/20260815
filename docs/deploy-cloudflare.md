@@ -51,7 +51,7 @@
 
 ### 1. e-Stat(政府統計の総合窓口)に登録し、appIdを取得する
 
-1. https://www.e-stat.go.jp/mypage/user/preregister0 からユーザー登録する(無料)
+1. https://www.e-stat.go.jp/mypage/user/preregister からユーザー登録する(無料)
 2. ログイン後、マイページの「API機能(アプリケーションID発行)」からアプリケーションIDを発行する
 3. e-Statのサイト(https://www.e-stat.go.jp/stat-search?query=消費者物価指数)で「2020年基準消費者物価指数」(または最新の基準年のもの)から「全国」「総合指数」の月次データを探し、そのページのAPI案内に表示される`statsDataId`を控える
 4. `worker/src/econ.js`の`JAPAN_CPI_STATS_DATA_ID`定数を、控えた値に書き換える
