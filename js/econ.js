@@ -13,6 +13,13 @@ const TOOLTIP_TERM_BY_ID = {
   "us-ppi-import": "import-price-index",
 };
 
+const CARD_ORDER = [
+  "jp-cpi", "us-cpi",
+  "jp-ppi-domestic", "us-ppi-domestic",
+  "jp-ppi-export", "us-ppi-export",
+  "jp-ppi-import", "us-ppi-import",
+];
+
 const gridEl = document.getElementById("econ-grid");
 
 function formatNumber(value) {
@@ -53,9 +60,9 @@ function renderIndicatorCard(indicator) {
     return card;
   }
 
-  const changeValue = indicator.yoyPercent ?? 0;
-  const changeClass = changeValue >= 0 ? "positive" : "negative";
-  const changeSign = changeValue >= 0 ? "+" : "";
+  const changeValue = indicator.yoyPercent;
+  const changeClass = typeof changeValue === "number" ? (changeValue >= 0 ? "positive" : "negative") : "";
+  const changeSign = typeof changeValue === "number" && changeValue >= 0 ? "+" : "";
   const termId = TOOLTIP_TERM_BY_ID[indicator.id] || "cpi";
   const yoyText = indicator.yoyPercent === null ? "-" : `${changeSign}${formatNumber(indicator.yoyPercent)}%`;
 
@@ -96,8 +103,12 @@ async function loadEconIndicators() {
   }
 
   gridEl.innerHTML = "";
-  for (const indicator of response.indicators) {
-    gridEl.appendChild(renderIndicatorCard(indicator));
+  const indicatorsById = new Map(response.indicators.map((indicator) => [indicator.id, indicator]));
+  for (const id of CARD_ORDER) {
+    const indicator = indicatorsById.get(id);
+    if (indicator) {
+      gridEl.appendChild(renderIndicatorCard(indicator));
+    }
   }
 }
 

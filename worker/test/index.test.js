@@ -212,11 +212,12 @@ test("handleEcon aggregates all 8 indicators and isolates per-indicator failures
     }
     if (urlString.includes("stat-search.boj.or.jp")) {
       return {
+        ok: true,
         json: async () => ({
           RESULTSET: [
             {
               VALUES: {
-                SURVEY_DATES: Array.from({ length: 13 }, (_, i) => 202501 + i),
+                SURVEY_DATES: [202501, 202502, 202503, 202504, 202505, 202506, 202507, 202508, 202509, 202510, 202511, 202512, 202601],
                 VALUES: Array.from({ length: 13 }, (_, i) => 100 + i),
               },
             },
@@ -226,11 +227,23 @@ test("handleEcon aggregates all 8 indicators and isolates per-indicator failures
     }
     if (urlString.includes("api.stlouisfed.org")) {
       return {
+        ok: true,
         json: async () => ({
-          observations: Array.from({ length: 13 }, (_, i) => ({
-            date: `2025-${String((i % 12) + 1).padStart(2, "0")}-01`,
-            value: String(200 + i),
-          })),
+          observations: [
+            { date: "2025-01-01", value: "200" },
+            { date: "2025-02-01", value: "201" },
+            { date: "2025-03-01", value: "202" },
+            { date: "2025-04-01", value: "203" },
+            { date: "2025-05-01", value: "204" },
+            { date: "2025-06-01", value: "205" },
+            { date: "2025-07-01", value: "206" },
+            { date: "2025-08-01", value: "207" },
+            { date: "2025-09-01", value: "208" },
+            { date: "2025-10-01", value: "209" },
+            { date: "2025-11-01", value: "210" },
+            { date: "2025-12-01", value: "211" },
+            { date: "2026-01-01", value: "212" },
+          ],
         }),
       };
     }

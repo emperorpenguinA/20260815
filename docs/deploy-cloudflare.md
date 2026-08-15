@@ -76,6 +76,8 @@ npx wrangler secret put FRED_API_KEY
 
 登録後、`npx wrangler deploy`を再実行してWorkerに反映する。
 
+ローカルで`npx wrangler dev`を使って検証する場合は、`worker/.dev.vars`ファイルにシークレットを書ける(`ESTAT_APP_ID=...`のような形式)。このファイルは`.gitignore`済みなので、誤ってコミットされることはない。
+
 ### 4. 日本銀行APIについて
 
 日本銀行の時系列統計データAPIは登録・認証が不要なため、追加設定は不要。

@@ -146,6 +146,18 @@ main {
   }
 }
 
+.econ-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing);
+}
+
+@media (min-width: 640px) {
+  .econ-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);

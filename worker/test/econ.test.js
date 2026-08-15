@@ -13,27 +13,45 @@ import {
   FRED_SERIES,
 } from "../src/econ.js";
 
-test("computeYoyPercent computes the percent change between the latest point and 12 months earlier", () => {
-  const points = [];
-  for (let i = 0; i < 13; i++) {
-    points.push({ date: `2025-${String(i + 1).padStart(2, "0")}`, value: 100 + i });
-  }
+test("computeYoyPercent computes the percent change between the latest point and the same month one year earlier", () => {
+  const points = [
+    { date: "2025-01", value: 100 },
+    { date: "2025-02", value: 101 },
+    { date: "2025-03", value: 102 },
+    { date: "2025-04", value: 103 },
+    { date: "2025-05", value: 104 },
+    { date: "2025-06", value: 105 },
+    { date: "2025-07", value: 106 },
+    { date: "2025-08", value: 107 },
+    { date: "2025-09", value: 108 },
+    { date: "2025-10", value: 109 },
+    { date: "2025-11", value: 110 },
+    { date: "2025-12", value: 111 },
+    { date: "2026-01", value: 112 },
+  ];
 
   const result = computeYoyPercent(points);
 
   assert.ok(Math.abs(result - 12) < 0.001);
 });
 
-test("computeYoyPercent returns null when fewer than 13 points are available", () => {
-  const points = [{ date: "2026-01", value: 100 }];
+test("computeYoyPercent returns null when the same month one year earlier is missing (a gap in the series)", () => {
+  const points = [
+    { date: "2025-02", value: 100 },
+    { date: "2026-01", value: 112 },
+  ];
   assert.equal(computeYoyPercent(points), null);
 });
 
+test("computeYoyPercent returns null when there are no points", () => {
+  assert.equal(computeYoyPercent([]), null);
+});
+
 test("computeYoyPercent returns null when the year-ago value is zero (avoid divide by zero)", () => {
-  const points = [];
-  for (let i = 0; i < 13; i++) {
-    points.push({ date: `2025-${String(i + 1).padStart(2, "0")}`, value: i === 0 ? 0 : 100 });
-  }
+  const points = [
+    { date: "2025-01", value: 0 },
+    { date: "2026-01", value: 100 },
+  ];
   assert.equal(computeYoyPercent(points), null);
 });
 
@@ -96,7 +114,7 @@ test("fetchBojPriceIndex requests the BOJ time-series API with the given series 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     requestedUrls.push(url.toString());
-    return { json: async () => ({ RESULTSET: [] }) };
+    return { ok: true, json: async () => ({ RESULTSET: [] }) };
   };
 
   try {
@@ -194,12 +212,89 @@ test("normalizeJapanCpi filters out entries with a non-numeric value", () => {
   assert.equal(result.points.length, 1);
 });
 
+test("normalizeJapanCpi throws when the table bundles multiple item categories (@cat01 varies across entries)", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "202501", "@cat01": "0001", $: "107.5" },
+            { "@time": "202501", "@cat01": "0002", $: "98.2" },
+          ],
+        },
+      },
+    },
+  };
+
+  assert.throws(() => normalizeJapanCpi(raw), /複数の分類/);
+});
+
+test("normalizeJapanCpi throws when the table bundles multiple regions (@area varies across entries)", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "202501", "@area": "00000", $: "107.5" },
+            { "@time": "202501", "@area": "13000", $: "110.1" },
+          ],
+        },
+      },
+    },
+  };
+
+  assert.throws(() => normalizeJapanCpi(raw), /複数の分類/);
+});
+
+test("normalizeJapanCpi succeeds when all entries share the same classification codes (single series)", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "202501", "@area": "00000", "@cat01": "0001", $: "107.5" },
+            { "@time": "202502", "@area": "00000", "@cat01": "0001", $: "107.8" },
+          ],
+        },
+      },
+    },
+  };
+
+  const result = normalizeJapanCpi(raw);
+
+  assert.equal(result.points.length, 2);
+});
+
+test("toEstatMonthString rejects an out-of-range month (e.g. '00'), which normalizeJapanCpi then reports as an unrecognized time-code format if it's the only entry", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [{ "@time": "202500999999", $: "107.5" }],
+        },
+      },
+    },
+  };
+
+  assert.throws(() => normalizeJapanCpi(raw), /想定外の時間軸コード形式/);
+});
+
+test("fetchBojPriceIndex throws a clear error when the upstream response is not ok", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({}) });
+  try {
+    await assert.rejects(() => fetchBojPriceIndex(BOJ_SERIES.ppiDomestic, "202501", "202607"), /日銀API上流エラー: 503/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("fetchJapanCpi requests e-Stat's getStatsData with the given appId and statsDataId", async () => {
   const requestedUrls = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     requestedUrls.push(url.toString());
-    return { json: async () => ({}) };
+    return { ok: true, json: async () => ({}) };
   };
 
   try {
@@ -207,6 +302,16 @@ test("fetchJapanCpi requests e-Stat's getStatsData with the given appId and stat
     assert.equal(requestedUrls.length, 1);
     assert.match(requestedUrls[0], /appId=test-app-id/);
     assert.match(requestedUrls[0], /statsDataId=0000000000/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchJapanCpi throws a clear error when the upstream response is not ok", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({}) });
+  try {
+    await assert.rejects(() => fetchJapanCpi("bad-app-id", "0000000000"), /e-Stat上流エラー: 403/);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -251,7 +356,7 @@ test("fetchUsIndicator requests FRED's series/observations endpoint with the giv
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     requestedUrls.push(url.toString());
-    return { json: async () => ({}) };
+    return { ok: true, json: async () => ({}) };
   };
 
   try {
@@ -260,6 +365,16 @@ test("fetchUsIndicator requests FRED's series/observations endpoint with the giv
     assert.match(requestedUrls[0], /series_id=CPIAUCSL/);
     assert.match(requestedUrls[0], /api_key=test-api-key/);
     assert.match(requestedUrls[0], /file_type=json/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchUsIndicator throws a clear error when the upstream response is not ok", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, status: 400, json: async () => ({}) });
+  try {
+    await assert.rejects(() => fetchUsIndicator(FRED_SERIES.cpi, "bad-key"), /FRED上流エラー: 400/);
   } finally {
     globalThis.fetch = originalFetch;
   }
