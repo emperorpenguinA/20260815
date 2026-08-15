@@ -146,6 +146,18 @@ main {
   }
 }
 
+.econ-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing);
+}
+
+@media (min-width: 640px) {
+  .econ-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -284,4 +296,17 @@ main {
 
 .page-banner[hidden] {
   display: none;
+}
+
+.section-heading {
+  font-size: 1.1rem;
+  margin: 32px 0 16px;
+}
+
+.card-price.positive {
+  color: var(--color-positive);
+}
+
+.card-price.negative {
+  color: var(--color-negative);
 }

@@ -202,3 +202,74 @@ test("handleSearch still fails when the primary search itself fails, regardless 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("handleEcon aggregates all 8 indicators and isolates per-indicator failures", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlString = url.toString();
+    if (urlString.includes("api.e-stat.go.jp")) {
+      throw new Error("e-Stat unreachable");
+    }
+    if (urlString.includes("stat-search.boj.or.jp")) {
+      return {
+        ok: true,
+        json: async () => ({
+          RESULTSET: [
+            {
+              VALUES: {
+                SURVEY_DATES: [202501, 202502, 202503, 202504, 202505, 202506, 202507, 202508, 202509, 202510, 202511, 202512, 202601],
+                VALUES: Array.from({ length: 13 }, (_, i) => 100 + i),
+              },
+            },
+          ],
+        }),
+      };
+    }
+    if (urlString.includes("api.stlouisfed.org")) {
+      return {
+        ok: true,
+        json: async () => ({
+          observations: [
+            { date: "2025-01-01", value: "200" },
+            { date: "2025-02-01", value: "201" },
+            { date: "2025-03-01", value: "202" },
+            { date: "2025-04-01", value: "203" },
+            { date: "2025-05-01", value: "204" },
+            { date: "2025-06-01", value: "205" },
+            { date: "2025-07-01", value: "206" },
+            { date: "2025-08-01", value: "207" },
+            { date: "2025-09-01", value: "208" },
+            { date: "2025-10-01", value: "209" },
+            { date: "2025-11-01", value: "210" },
+            { date: "2025-12-01", value: "211" },
+            { date: "2026-01-01", value: "212" },
+          ],
+        }),
+      };
+    }
+    throw new Error(`unexpected URL: ${urlString}`);
+  };
+
+  try {
+    const request = new Request("https://example.com/api/econ");
+    const env = { ESTAT_APP_ID: "test-app-id", FRED_API_KEY: "test-fred-key" };
+    const response = await handler.fetch(request, env);
+    const body = await response.json();
+
+    assert.equal(body.indicators.length, 8);
+
+    const jpCpi = body.indicators.find((i) => i.id === "jp-cpi");
+    assert.equal(jpCpi.error, true);
+
+    const jpPpiDomestic = body.indicators.find((i) => i.id === "jp-ppi-domestic");
+    assert.equal(jpPpiDomestic.error, undefined);
+    assert.equal(jpPpiDomestic.points.length, 13);
+    assert.ok(typeof jpPpiDomestic.yoyPercent === "number");
+
+    const usCpi = body.indicators.find((i) => i.id === "us-cpi");
+    assert.equal(usCpi.error, undefined);
+    assert.equal(usCpi.points.length, 13);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

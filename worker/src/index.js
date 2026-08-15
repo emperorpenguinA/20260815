@@ -7,6 +7,19 @@ import {
   extractPreloadedState,
   normalizeJapanSearch,
 } from "./yahoo.js";
+import {
+  computeYoyPercent,
+  takeRecentMonths,
+  fetchBojPriceIndex,
+  normalizeBojPriceIndex,
+  BOJ_SERIES,
+  fetchJapanCpi,
+  normalizeJapanCpi,
+  JAPAN_CPI_STATS_DATA_ID,
+  fetchUsIndicator,
+  normalizeUsIndicator,
+  FRED_SERIES,
+} from "./econ.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -15,7 +28,7 @@ const CORS_HEADERS = {
 };
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === "OPTIONS") {
       return new Response(null, { headers: CORS_HEADERS });
     }
@@ -30,6 +43,9 @@ export default {
     }
     if (url.pathname === "/api/search") {
       return handleSearch(url);
+    }
+    if (url.pathname === "/api/econ") {
+      return handleEcon(env);
     }
 
     return jsonResponse({ error: true, message: "not found" }, 404);
@@ -132,4 +148,90 @@ async function fetchJapanSearchSupplement(query) {
   } catch {
     return [];
   }
+}
+
+const ECON_RECENT_MONTHS = 36;
+
+async function handleEcon(env) {
+  const now = new Date();
+  const endDate = formatYyyymm(now);
+  const startDate = formatYyyymm(new Date(now.getFullYear(), now.getMonth() - ECON_RECENT_MONTHS, 1));
+
+  const jobs = [
+    {
+      id: "jp-cpi",
+      country: "JP",
+      label: "消費者物価指数(CPI)",
+      run: () => fetchJapanCpi(env.ESTAT_APP_ID, JAPAN_CPI_STATS_DATA_ID).then(normalizeJapanCpi),
+    },
+    {
+      id: "jp-ppi-domestic",
+      country: "JP",
+      label: "国内企業物価指数(PPI)",
+      run: () => fetchBojPriceIndex(BOJ_SERIES.ppiDomestic, startDate, endDate).then(normalizeBojPriceIndex),
+    },
+    {
+      id: "jp-ppi-export",
+      country: "JP",
+      label: "輸出物価指数",
+      run: () => fetchBojPriceIndex(BOJ_SERIES.ppiExport, startDate, endDate).then(normalizeBojPriceIndex),
+    },
+    {
+      id: "jp-ppi-import",
+      country: "JP",
+      label: "輸入物価指数",
+      run: () => fetchBojPriceIndex(BOJ_SERIES.ppiImport, startDate, endDate).then(normalizeBojPriceIndex),
+    },
+    {
+      id: "us-cpi",
+      country: "US",
+      label: "消費者物価指数(CPI)",
+      run: () => fetchUsIndicator(FRED_SERIES.cpi, env.FRED_API_KEY).then(normalizeUsIndicator),
+    },
+    {
+      id: "us-ppi-domestic",
+      country: "US",
+      label: "生産者物価指数(PPI)",
+      run: () => fetchUsIndicator(FRED_SERIES.ppiDomestic, env.FRED_API_KEY).then(normalizeUsIndicator),
+    },
+    {
+      id: "us-ppi-export",
+      country: "US",
+      label: "輸出物価指数",
+      run: () => fetchUsIndicator(FRED_SERIES.ppiExport, env.FRED_API_KEY).then(normalizeUsIndicator),
+    },
+    {
+      id: "us-ppi-import",
+      country: "US",
+      label: "輸入物価指数",
+      run: () => fetchUsIndicator(FRED_SERIES.ppiImport, env.FRED_API_KEY).then(normalizeUsIndicator),
+    },
+  ];
+
+  const indicators = await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        const { points: rawPoints } = await job.run();
+        const points = takeRecentMonths(rawPoints, ECON_RECENT_MONTHS);
+        return {
+          id: job.id,
+          country: job.country,
+          label: job.label,
+          points,
+          yoyPercent: computeYoyPercent(points),
+          latestDate: points.length > 0 ? points[points.length - 1].date : null,
+        };
+      } catch (err) {
+        return { id: job.id, country: job.country, label: job.label, error: true, message: err.message };
+      }
+    })
+  );
+
+  return jsonResponse({ indicators });
+}
+
+function formatYyyymm(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}${month}`;
 }

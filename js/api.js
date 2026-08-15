@@ -21,3 +21,7 @@ export function fetchChart(symbol, range = "3mo", interval = "1d") {
 export function searchSymbols(query) {
   return getJson(`/api/search?q=${encodeURIComponent(query)}`);
 }
+
+export function fetchEconIndicators() {
+  return getJson("/api/econ");
+}
