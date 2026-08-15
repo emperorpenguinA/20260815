@@ -210,6 +210,27 @@ main {
   text-align: right;
 }
 
+.card-chart svg {
+  cursor: crosshair;
+}
+
+.chart-point-tooltip {
+  position: fixed;
+  z-index: 20;
+  transform: translate(-50%, -130%);
+  background: var(--color-text);
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.chart-point-tooltip[hidden] {
+  display: none;
+}
+
 .card-error {
   color: var(--color-negative);
   font-size: 0.9rem;

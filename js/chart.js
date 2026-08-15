@@ -2,7 +2,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const WIDTH = 240;
 const HEIGHT = 60;
 const PADDING = 4;
-const MARKER_RADIUS = 6;
+const INDICATOR_RADIUS = 3;
 
 export function pointsToCoordinates(points, width = WIDTH, height = HEIGHT, padding = PADDING) {
   if (!points || points.length === 0) return [];
@@ -34,6 +34,74 @@ function formatMarkerValue(value) {
   return value.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
 }
 
+// Shared across every rendered sparkline: only one point-tooltip is ever
+// shown at a time, and only one "tap outside closes it" listener is ever
+// registered, no matter how many times renderSparkline runs (once per
+// card, and again on every refresh).
+let sharedTooltipEl = null;
+let activeSvg = null;
+
+function ensureTooltipEl() {
+  if (sharedTooltipEl) return sharedTooltipEl;
+
+  sharedTooltipEl = document.createElement("div");
+  sharedTooltipEl.className = "chart-point-tooltip";
+  sharedTooltipEl.hidden = true;
+  document.body.appendChild(sharedTooltipEl);
+
+  document.addEventListener("pointerdown", (event) => {
+    if (activeSvg && !activeSvg.contains(event.target)) {
+      hideTooltip();
+    }
+  });
+
+  return sharedTooltipEl;
+}
+
+function hideTooltip() {
+  if (activeSvg) {
+    const indicator = activeSvg.querySelector(".chart-indicator");
+    if (indicator) indicator.style.display = "none";
+  }
+  if (sharedTooltipEl) sharedTooltipEl.hidden = true;
+  activeSvg = null;
+}
+
+function nearestCoord(coords, svg, clientX, logicalWidth) {
+  const rect = svg.getBoundingClientRect();
+  const scale = rect.width === 0 ? 1 : logicalWidth / rect.width;
+  const logicalX = (clientX - rect.left) * scale;
+
+  let nearest = coords[0];
+  let minDistance = Math.abs(coords[0].x - logicalX);
+  for (const coord of coords) {
+    const distance = Math.abs(coord.x - logicalX);
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = coord;
+    }
+  }
+  return nearest;
+}
+
+function showPoint(svg, indicator, coord, logicalWidth, logicalHeight) {
+  const tooltip = ensureTooltipEl();
+  const rect = svg.getBoundingClientRect();
+  const scaleX = logicalWidth === 0 ? 1 : rect.width / logicalWidth;
+  const scaleY = logicalHeight === 0 ? 1 : rect.height / logicalHeight;
+
+  indicator.setAttribute("cx", coord.x.toFixed(2));
+  indicator.setAttribute("cy", coord.y.toFixed(2));
+  indicator.style.display = "";
+
+  tooltip.textContent = `${coord.date}: ${formatMarkerValue(coord.close)}`;
+  tooltip.hidden = false;
+  tooltip.style.left = `${rect.left + coord.x * scaleX}px`;
+  tooltip.style.top = `${rect.top + coord.y * scaleY}px`;
+
+  activeSvg = svg;
+}
+
 export function renderSparkline(container, points, width = WIDTH, height = HEIGHT) {
   container.innerHTML = "";
   if (!points || points.length === 0) {
@@ -45,6 +113,7 @@ export function renderSparkline(container, points, width = WIDTH, height = HEIGH
   svg.setAttribute("width", "100%");
   svg.setAttribute("height", String(height));
   svg.setAttribute("preserveAspectRatio", "none");
+  svg.style.touchAction = "pan-y";
 
   const path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("d", pointsToPath(points, width, height));
@@ -54,22 +123,32 @@ export function renderSparkline(container, points, width = WIDTH, height = HEIGH
   path.setAttribute("fill", "none");
   path.setAttribute("stroke-width", "2");
 
+  const indicator = document.createElementNS(SVG_NS, "circle");
+  indicator.setAttribute("class", "chart-indicator");
+  indicator.setAttribute("r", String(INDICATOR_RADIUS));
+  indicator.setAttribute("fill", "var(--color-accent)");
+  indicator.style.display = "none";
+
   svg.appendChild(path);
+  svg.appendChild(indicator);
+  container.appendChild(svg);
 
   const coords = pointsToCoordinates(points, width, height);
-  for (const coord of coords) {
-    const marker = document.createElementNS(SVG_NS, "circle");
-    marker.setAttribute("cx", coord.x.toFixed(2));
-    marker.setAttribute("cy", coord.y.toFixed(2));
-    marker.setAttribute("r", String(MARKER_RADIUS));
-    marker.setAttribute("fill", "transparent");
 
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = `${coord.date}: ${formatMarkerValue(coord.close)}`;
-    marker.appendChild(title);
-
-    svg.appendChild(marker);
+  function handlePointerActivity(event) {
+    const coord = nearestCoord(coords, svg, event.clientX, width);
+    showPoint(svg, indicator, coord, width, height);
   }
 
-  container.appendChild(svg);
+  svg.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    svg.setPointerCapture(event.pointerId);
+    handlePointerActivity(event);
+  });
+  svg.addEventListener("pointermove", handlePointerActivity);
+  svg.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse") {
+      hideTooltip();
+    }
+  });
 }
