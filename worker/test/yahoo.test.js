@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeChart, normalizeSearch, fetchChart } from "../src/yahoo.js";
+import { normalizeChart, normalizeSearch, fetchChart, extractPreloadedState, normalizeJapanSearch } from "../src/yahoo.js";
 
 test("normalizeChart parses a valid chart response", () => {
   const raw = {
@@ -172,4 +172,97 @@ test("fetchChart does not retry a non-retryable 404 response", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("extractPreloadedState parses the JSON assigned to window.__PRELOADED_STATE__ out of an HTML page", () => {
+  const html = `
+    <html><body>
+    <script>
+      window.__SOMETHING_ELSE__ = {"unrelated": true};
+      window.__PRELOADED_STATE__ = {"mainSearchList":{"results":[{"code":"8306","name":"三菱UFJ"}]}};
+      doStuff();
+    </script>
+    </body></html>
+  `;
+
+  const state = extractPreloadedState(html);
+
+  assert.deepEqual(state, { mainSearchList: { results: [{ code: "8306", name: "三菱UFJ" }] } });
+});
+
+test("extractPreloadedState handles braces and escaped quotes inside string values", () => {
+  const html = `window.__PRELOADED_STATE__ = {"comment":"has a { brace } and a \\"quote\\" inside"};`;
+
+  const state = extractPreloadedState(html);
+
+  assert.deepEqual(state, { comment: 'has a { brace } and a "quote" inside' });
+});
+
+test("extractPreloadedState returns null when the marker is not present", () => {
+  const state = extractPreloadedState("<html><body>no data here</body></html>");
+  assert.equal(state, null);
+});
+
+test("extractPreloadedState returns null on malformed/truncated JSON", () => {
+  const state = extractPreloadedState('window.__PRELOADED_STATE__ = {"unterminated": ');
+  assert.equal(state, null);
+});
+
+test("normalizeJapanSearch maps a Tokyo-listed equity code to the .T symbol format", () => {
+  const state = {
+    mainSearchList: {
+      results: [{ code: "8306", name: "(株)三菱ＵＦＪフィナンシャル・グループ", marketName: "東証PRM" }],
+    },
+  };
+
+  const results = normalizeJapanSearch(state);
+
+  assert.deepEqual(results, [
+    { symbol: "8306.T", name: "(株)三菱ＵＦＪフィナンシャル・グループ", exchange: "東証PRM", type: "EQUITY" },
+  ]);
+});
+
+test("normalizeJapanSearch keeps a foreign ticker code as-is", () => {
+  const state = {
+    mainSearchList: {
+      results: [{ code: "AAPL", name: "アップル", marketName: "NASDAQ" }],
+    },
+  };
+
+  const results = normalizeJapanSearch(state);
+
+  assert.deepEqual(results, [{ symbol: "AAPL", name: "アップル", exchange: "NASDAQ", type: "EQUITY" }]);
+});
+
+test("normalizeJapanSearch filters out investment trusts (mutual funds), which use a different symbol namespace", () => {
+  const state = {
+    mainSearchList: {
+      results: [
+        { code: "0331101A", name: "三菱UFJ ＜DC＞ライフ･バランスF(安定型)", marketName: "投資信託" },
+        { code: "8306", name: "(株)三菱ＵＦＪフィナンシャル・グループ", marketName: "東証PRM" },
+      ],
+    },
+  };
+
+  const results = normalizeJapanSearch(state);
+
+  assert.equal(results.length, 1);
+  assert.equal(results[0].symbol, "8306.T");
+});
+
+test("normalizeJapanSearch filters out results on unrecognized markets rather than guessing a symbol format", () => {
+  const state = {
+    mainSearchList: {
+      results: [{ code: "1234", name: "何か", marketName: "名証" }],
+    },
+  };
+
+  const results = normalizeJapanSearch(state);
+
+  assert.deepEqual(results, []);
+});
+
+test("normalizeJapanSearch returns an empty array when mainSearchList is missing", () => {
+  assert.deepEqual(normalizeJapanSearch({}), []);
+  assert.deepEqual(normalizeJapanSearch(null), []);
 });

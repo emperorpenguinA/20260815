@@ -1,4 +1,12 @@
-import { fetchChart, fetchSearch, normalizeChart, normalizeSearch } from "./yahoo.js";
+import {
+  fetchChart,
+  fetchSearch,
+  normalizeChart,
+  normalizeSearch,
+  fetchJapanSearchHtml,
+  extractPreloadedState,
+  normalizeJapanSearch,
+} from "./yahoo.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -97,10 +105,31 @@ async function handleSearch(url) {
     return jsonResponse({ results: [] });
   }
 
+  let primaryResults;
   try {
     const raw = await fetchSearch(q);
-    return jsonResponse({ results: normalizeSearch(raw) });
+    primaryResults = normalizeSearch(raw);
   } catch (err) {
     return jsonResponse({ error: true, message: err.message }, 502);
+  }
+
+  const japanResults = await fetchJapanSearchSupplement(q);
+  const seenSymbols = new Set(primaryResults.map((r) => r.symbol));
+  const merged = primaryResults.concat(japanResults.filter((r) => !seenSymbols.has(r.symbol)));
+
+  return jsonResponse({ results: merged });
+}
+
+// Best-effort: a failure here (network error, or Yahoo Japan changing their
+// page so extractPreloadedState can't find/parse the embedded state) should
+// never fail the whole search — the primary results still stand on their own.
+async function fetchJapanSearchSupplement(query) {
+  try {
+    const html = await fetchJapanSearchHtml(query);
+    const state = extractPreloadedState(html);
+    if (!state) return [];
+    return normalizeJapanSearch(state);
+  } catch {
+    return [];
   }
 }
