@@ -5,6 +5,11 @@ import { initTooltips } from "./tooltip.js";
 
 let watchlist = loadWatchlist();
 let loadGeneration = 0;
+let searchGeneration = 0;
+let searchDebounceTimer = null;
+
+const SEARCH_DEBOUNCE_MS = 300;
+const SEARCH_MIN_LENGTH = 2;
 
 const gridEl = document.getElementById("watchlist-grid");
 const searchInputEl = document.getElementById("search-input");
@@ -170,6 +175,9 @@ async function loadData() {
 
 async function handleSearch() {
   const query = searchInputEl.value.trim();
+  searchGeneration += 1;
+  const generation = searchGeneration;
+
   searchResultsEl.innerHTML = "";
   if (!query) return;
 
@@ -178,9 +186,12 @@ async function handleSearch() {
     const response = await searchSymbols(query);
     results = response.results;
   } catch {
+    if (generation !== searchGeneration) return;
     searchResultsEl.innerHTML = "<li>検索に失敗しました</li>";
     return;
   }
+
+  if (generation !== searchGeneration) return;
 
   if (results.length === 0) {
     searchResultsEl.innerHTML = "<li>該当する銘柄が見つかりませんでした</li>";
@@ -202,10 +213,30 @@ async function handleSearch() {
   }
 }
 
-searchButtonEl.addEventListener("click", handleSearch);
-searchInputEl.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") handleSearch();
+function handleSearchInput() {
+  clearTimeout(searchDebounceTimer);
+
+  const query = searchInputEl.value.trim();
+  if (query.length < SEARCH_MIN_LENGTH) {
+    searchGeneration += 1;
+    searchResultsEl.innerHTML = "";
+    return;
+  }
+
+  searchDebounceTimer = setTimeout(handleSearch, SEARCH_DEBOUNCE_MS);
+}
+
+searchButtonEl.addEventListener("click", () => {
+  clearTimeout(searchDebounceTimer);
+  handleSearch();
 });
+searchInputEl.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    clearTimeout(searchDebounceTimer);
+    handleSearch();
+  }
+});
+searchInputEl.addEventListener("input", handleSearchInput);
 refreshButtonEl.addEventListener("click", loadData);
 
 renderGrid();
