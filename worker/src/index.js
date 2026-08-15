@@ -52,7 +52,7 @@ async function handleQuote(url) {
         const raw = await fetchChart(symbol, "1d", "1d");
         const normalized = normalizeChart(raw);
         return {
-          symbol: normalized.symbol,
+          symbol,
           shortName: normalized.shortName,
           currency: normalized.currency,
           price: normalized.price,

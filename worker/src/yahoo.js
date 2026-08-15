@@ -5,15 +5,43 @@ const USER_AGENT =
 
 const KNOWN_QUOTE_TYPES = new Set(["EQUITY", "INDEX", "CURRENCY", "ETF"]);
 
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 200;
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(url, options) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, options);
+      if (res.ok || !RETRYABLE_STATUS.has(res.status) || attempt === MAX_ATTEMPTS) {
+        return res;
+      }
+      lastError = new Error(`upstream returned ${res.status}`);
+    } catch (err) {
+      lastError = err;
+      if (attempt === MAX_ATTEMPTS) throw err;
+    }
+    await sleep(RETRY_DELAY_MS * attempt);
+  }
+
+  throw lastError;
+}
+
 export async function fetchChart(symbol, range, interval) {
   const url = `${YAHOO_CHART_BASE}${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  const res = await fetchWithRetry(url, { headers: { "User-Agent": USER_AGENT } });
   return res.json();
 }
 
 export async function fetchSearch(query) {
   const url = `${YAHOO_SEARCH_BASE}?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  const res = await fetchWithRetry(url, { headers: { "User-Agent": USER_AGENT } });
   return res.json();
 }
 

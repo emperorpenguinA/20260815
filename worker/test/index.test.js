@@ -80,3 +80,41 @@ test("handleQuote isolates a per-symbol failure without failing the whole batch"
     globalThis.fetch = originalFetch;
   }
 });
+
+test("handleQuote echoes back the originally requested symbol, even when Yahoo's response uses a different canonical form", async () => {
+  // Yahoo's unofficial API sometimes echoes a different symbol string (e.g. "USDJPY=X")
+  // than what was requested (e.g. "JPY=X"). The client matches quotes back to watchlist
+  // items by the symbol it requested, so the response must echo that exact string back,
+  // not whatever Yahoo's meta.symbol happens to say.
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    json: async () => ({
+      chart: {
+        result: [
+          {
+            meta: {
+              currency: "JPY",
+              symbol: "USDJPY=X",
+              regularMarketPrice: 159.3,
+              chartPreviousClose: 159.5,
+            },
+            timestamp: [],
+            indicators: { quote: [{ close: [] }] },
+          },
+        ],
+        error: null,
+      },
+    }),
+  });
+
+  try {
+    const request = new Request("https://example.com/api/quote?symbols=JPY%3DX");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    assert.equal(body.quotes[0].symbol, "JPY=X");
+    assert.equal(body.quotes[0].price, 159.3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

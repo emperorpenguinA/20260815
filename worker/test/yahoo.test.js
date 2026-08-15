@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeChart, normalizeSearch } from "../src/yahoo.js";
+import { normalizeChart, normalizeSearch, fetchChart } from "../src/yahoo.js";
 
 test("normalizeChart parses a valid chart response", () => {
   const raw = {
@@ -91,4 +91,57 @@ test("normalizeSearch keeps only known quote types and maps fields", () => {
 test("normalizeSearch returns an empty array when quotes is missing", () => {
   const results = normalizeSearch({});
   assert.deepEqual(results, []);
+});
+
+test("fetchChart retries on a transient 503 and succeeds on the next attempt", async () => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return { ok: false, status: 503, json: async () => ({}) };
+    }
+    return { ok: true, status: 200, json: async () => ({ chart: { result: [], error: null } }) };
+  };
+
+  try {
+    const raw = await fetchChart("^N225", "1d", "1d");
+    assert.equal(calls, 2);
+    assert.deepEqual(raw, { chart: { result: [], error: null } });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchChart gives up after repeated network failures and reports the last error", async () => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls += 1;
+    throw new Error("network down");
+  };
+
+  try {
+    await assert.rejects(() => fetchChart("^N225", "1d", "1d"), /network down/);
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchChart does not retry a non-retryable 404 response", async () => {
+  let calls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return { ok: false, status: 404, json: async () => ({ chart: { result: null, error: { description: "not found" } } }) };
+  };
+
+  try {
+    const raw = await fetchChart("BADSYMBOL", "1d", "1d");
+    assert.equal(calls, 1);
+    assert.equal(raw.chart.error.description, "not found");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
