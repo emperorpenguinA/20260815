@@ -85,3 +85,33 @@ function toEstatMonthString(time) {
   if (!match) return null;
   return `${match[1]}-${match[2]}`;
 }
+
+const FRED_OBSERVATIONS_BASE = "https://api.stlouisfed.org/fred/series/observations";
+
+// FRED(セントルイス連銀)の series_id。いずれも米国労働統計局(BLS)由来で
+// 公開・安定している系列。
+export const FRED_SERIES = {
+  cpi: "CPIAUCSL",
+  ppiDomestic: "PPIACO",
+  ppiExport: "IQ",
+  ppiImport: "IR",
+};
+
+export async function fetchUsIndicator(seriesId, apiKey) {
+  const url = `${FRED_OBSERVATIONS_BASE}?series_id=${encodeURIComponent(seriesId)}&api_key=${encodeURIComponent(apiKey)}&file_type=json`;
+  const res = await fetch(url);
+  return res.json();
+}
+
+export function normalizeUsIndicator(raw) {
+  const observations = raw?.observations;
+  if (!observations || observations.length === 0) {
+    throw new Error("米国の指標データが見つかりません");
+  }
+
+  const points = observations
+    .map((o) => ({ date: typeof o.date === "string" ? o.date.slice(0, 7) : null, value: Number(o.value) }))
+    .filter((p) => p.date !== null && !Number.isNaN(p.value));
+
+  return { points };
+}

@@ -8,6 +8,9 @@ import {
   BOJ_SERIES,
   fetchJapanCpi,
   normalizeJapanCpi,
+  normalizeUsIndicator,
+  fetchUsIndicator,
+  FRED_SERIES,
 } from "../src/econ.js";
 
 test("computeYoyPercent computes the percent change between the latest point and 12 months earlier", () => {
@@ -204,6 +207,59 @@ test("fetchJapanCpi requests e-Stat's getStatsData with the given appId and stat
     assert.equal(requestedUrls.length, 1);
     assert.match(requestedUrls[0], /appId=test-app-id/);
     assert.match(requestedUrls[0], /statsDataId=0000000000/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("normalizeUsIndicator converts observations into {date, value} points, truncating the date to YYYY-MM", () => {
+  const raw = {
+    observations: [
+      { date: "2025-01-01", value: "308.417" },
+      { date: "2025-02-01", value: "309.685" },
+    ],
+  };
+
+  const result = normalizeUsIndicator(raw);
+
+  assert.deepEqual(result.points, [
+    { date: "2025-01", value: 308.417 },
+    { date: "2025-02", value: 309.685 },
+  ]);
+});
+
+test("normalizeUsIndicator filters out FRED's '.' placeholder for a not-yet-published value", () => {
+  const raw = {
+    observations: [
+      { date: "2025-01-01", value: "308.417" },
+      { date: "2025-02-01", value: "." },
+    ],
+  };
+
+  const result = normalizeUsIndicator(raw);
+
+  assert.equal(result.points.length, 1);
+});
+
+test("normalizeUsIndicator throws when observations is missing or empty", () => {
+  assert.throws(() => normalizeUsIndicator({}), /米国の指標データが見つかりません/);
+  assert.throws(() => normalizeUsIndicator({ observations: [] }), /米国の指標データが見つかりません/);
+});
+
+test("fetchUsIndicator requests FRED's series/observations endpoint with the given series ID and API key", async () => {
+  const requestedUrls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(url.toString());
+    return { json: async () => ({}) };
+  };
+
+  try {
+    await fetchUsIndicator(FRED_SERIES.cpi, "test-api-key");
+    assert.equal(requestedUrls.length, 1);
+    assert.match(requestedUrls[0], /series_id=CPIAUCSL/);
+    assert.match(requestedUrls[0], /api_key=test-api-key/);
+    assert.match(requestedUrls[0], /file_type=json/);
   } finally {
     globalThis.fetch = originalFetch;
   }
