@@ -24,6 +24,15 @@ function formatNumber(value) {
   return value.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function renderGrid() {
   gridEl.innerHTML = "";
   for (const item of watchlist) {
@@ -33,10 +42,10 @@ function renderGrid() {
     card.innerHTML = `
       <div class="card-header">
         <div>
-          <div class="card-title">${item.name}</div>
-          <div class="card-symbol">${item.symbol}</div>
+          <div class="card-title">${escapeHtml(item.name)}</div>
+          <div class="card-symbol">${escapeHtml(item.symbol)}</div>
         </div>
-        <button class="card-remove" data-symbol="${item.symbol}" aria-label="削除">×</button>
+        <button class="card-remove" data-symbol="${escapeHtml(item.symbol)}" aria-label="削除">×</button>
       </div>
       <div class="card-body">読み込み中...</div>
     `;
@@ -62,7 +71,7 @@ function renderCardBody(symbol, quote, points) {
     body.innerHTML = `
       <div class="card-error">
         取得できませんでした
-        <button class="retry-button" data-symbol="${symbol}">再試行</button>
+        <button class="retry-button" data-symbol="${escapeHtml(symbol)}">再試行</button>
       </div>
     `;
     body.querySelector(".retry-button").addEventListener("click", () => {
@@ -94,23 +103,25 @@ function renderCardBody(symbol, quote, points) {
   initTooltips(body);
 }
 
-async function refreshCard(item, generation) {
-  const [quoteResult, chartResult] = await Promise.allSettled([
-    fetchQuotes([item.symbol]),
-    fetchChart(item.symbol, "3mo", "1d"),
-  ]);
+async function refreshCard(item, generation, quote) {
+  try {
+    let points = [];
+    try {
+      const chart = await fetchChart(item.symbol, "3mo", "1d");
+      points = chart.points;
+    } catch {
+      points = [];
+    }
 
-  if (generation !== loadGeneration) return true;
+    if (generation !== loadGeneration) return true;
 
-  if (quoteResult.status === "rejected") {
-    renderCardBody(item.symbol, { symbol: item.symbol, error: true, message: quoteResult.reason.message }, []);
+    renderCardBody(item.symbol, quote, points);
+    return !quote.error;
+  } catch (err) {
+    if (generation !== loadGeneration) return false;
+    renderCardBody(item.symbol, { symbol: item.symbol, error: true, message: err.message }, []);
     return false;
   }
-
-  const quote = quoteResult.value.quotes[0];
-  const points = chartResult.status === "fulfilled" ? chartResult.value.points : [];
-  renderCardBody(item.symbol, quote, points);
-  return !quote.error;
 }
 
 async function loadData() {
@@ -122,7 +133,27 @@ async function loadData() {
   loadGeneration += 1;
   const generation = loadGeneration;
 
-  const results = await Promise.all(watchlist.map((item) => refreshCard(item, generation)));
+  let quotesBySymbol;
+  try {
+    const quotesResponse = await fetchQuotes(watchlist.map((item) => item.symbol));
+    quotesBySymbol = new Map(quotesResponse.quotes.map((q) => [q.symbol, q]));
+  } catch (err) {
+    if (generation !== loadGeneration) return;
+    for (const item of watchlist) {
+      renderCardBody(item.symbol, { symbol: item.symbol, error: true, message: err.message }, []);
+    }
+    pageBannerEl.hidden = false;
+    return;
+  }
+
+  if (generation !== loadGeneration) return;
+
+  const results = await Promise.all(
+    watchlist.map((item) => {
+      const quote = quotesBySymbol.get(item.symbol) || { symbol: item.symbol, error: true };
+      return refreshCard(item, generation, quote);
+    })
+  );
   if (generation !== loadGeneration) return;
 
   const allFailed = results.every((ok) => !ok);
@@ -150,7 +181,7 @@ async function handleSearch() {
 
   for (const result of results) {
     const li = document.createElement("li");
-    li.innerHTML = `<span>${result.name} (${result.symbol})</span><span>${result.exchange}</span>`;
+    li.innerHTML = `<span>${escapeHtml(result.name)} (${escapeHtml(result.symbol)})</span><span>${escapeHtml(result.exchange)}</span>`;
     li.addEventListener("click", () => {
       watchlist = addSymbol(watchlist, { symbol: result.symbol, name: result.name });
       saveWatchlist(watchlist);

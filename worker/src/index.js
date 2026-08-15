@@ -49,7 +49,7 @@ async function handleQuote(url) {
   const quotes = await Promise.all(
     symbols.map(async (symbol) => {
       try {
-        const raw = await fetchChart(symbol, "5d", "1d");
+        const raw = await fetchChart(symbol, "1d", "1d");
         const normalized = normalizeChart(raw);
         return {
           symbol: normalized.symbol,
