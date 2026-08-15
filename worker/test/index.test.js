@@ -202,3 +202,61 @@ test("handleSearch still fails when the primary search itself fails, regardless 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("handleEcon aggregates all 8 indicators and isolates per-indicator failures", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlString = url.toString();
+    if (urlString.includes("api.e-stat.go.jp")) {
+      throw new Error("e-Stat unreachable");
+    }
+    if (urlString.includes("stat-search.boj.or.jp")) {
+      return {
+        json: async () => ({
+          RESULTSET: [
+            {
+              VALUES: {
+                SURVEY_DATES: Array.from({ length: 13 }, (_, i) => 202501 + i),
+                VALUES: Array.from({ length: 13 }, (_, i) => 100 + i),
+              },
+            },
+          ],
+        }),
+      };
+    }
+    if (urlString.includes("api.stlouisfed.org")) {
+      return {
+        json: async () => ({
+          observations: Array.from({ length: 13 }, (_, i) => ({
+            date: `2025-${String((i % 12) + 1).padStart(2, "0")}-01`,
+            value: String(200 + i),
+          })),
+        }),
+      };
+    }
+    throw new Error(`unexpected URL: ${urlString}`);
+  };
+
+  try {
+    const request = new Request("https://example.com/api/econ");
+    const env = { ESTAT_APP_ID: "test-app-id", FRED_API_KEY: "test-fred-key" };
+    const response = await handler.fetch(request, env);
+    const body = await response.json();
+
+    assert.equal(body.indicators.length, 8);
+
+    const jpCpi = body.indicators.find((i) => i.id === "jp-cpi");
+    assert.equal(jpCpi.error, true);
+
+    const jpPpiDomestic = body.indicators.find((i) => i.id === "jp-ppi-domestic");
+    assert.equal(jpPpiDomestic.error, undefined);
+    assert.equal(jpPpiDomestic.points.length, 13);
+    assert.ok(typeof jpPpiDomestic.yoyPercent === "number");
+
+    const usCpi = body.indicators.find((i) => i.id === "us-cpi");
+    assert.equal(usCpi.error, undefined);
+    assert.equal(usCpi.points.length, 13);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
