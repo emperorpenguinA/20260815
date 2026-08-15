@@ -285,3 +285,16 @@ main {
 .page-banner[hidden] {
   display: none;
 }
+
+.section-heading {
+  font-size: 1.1rem;
+  margin: 32px 0 16px;
+}
+
+.card-price.positive {
+  color: var(--color-positive);
+}
+
+.card-price.negative {
+  color: var(--color-negative);
+}
