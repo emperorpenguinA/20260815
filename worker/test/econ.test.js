@@ -6,6 +6,8 @@ import {
   normalizeBojPriceIndex,
   fetchBojPriceIndex,
   BOJ_SERIES,
+  fetchJapanCpi,
+  normalizeJapanCpi,
 } from "../src/econ.js";
 
 test("computeYoyPercent computes the percent change between the latest point and 12 months earlier", () => {
@@ -101,6 +103,107 @@ test("fetchBojPriceIndex requests the BOJ time-series API with the given series 
     assert.match(requestedUrls[0], /code=PRCG20_2200000000/);
     assert.match(requestedUrls[0], /startDate=202501/);
     assert.match(requestedUrls[0], /endDate=202607/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("normalizeJapanCpi converts an array of VALUE entries into {date, value} points", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "202501000000", $: "107.5" },
+            { "@time": "202502000000", $: "107.8" },
+          ],
+        },
+      },
+    },
+  };
+
+  const result = normalizeJapanCpi(raw);
+
+  assert.deepEqual(result.points, [
+    { date: "2025-01", value: 107.5 },
+    { date: "2025-02", value: 107.8 },
+  ]);
+});
+
+test("normalizeJapanCpi handles a single VALUE object (not wrapped in an array), which e-Stat returns when there is only one result", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: { "@time": "202501000000", $: "107.5" },
+        },
+      },
+    },
+  };
+
+  const result = normalizeJapanCpi(raw);
+
+  assert.deepEqual(result.points, [{ date: "2025-01", value: 107.5 }]);
+});
+
+test("normalizeJapanCpi sorts points chronologically", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "202502000000", $: "107.8" },
+            { "@time": "202501000000", $: "107.5" },
+          ],
+        },
+      },
+    },
+  };
+
+  const result = normalizeJapanCpi(raw);
+
+  assert.deepEqual(
+    result.points.map((p) => p.date),
+    ["2025-01", "2025-02"]
+  );
+});
+
+test("normalizeJapanCpi throws when DATA_INF.VALUE is missing", () => {
+  assert.throws(() => normalizeJapanCpi({}), /消費者物価指数データが見つかりません/);
+});
+
+test("normalizeJapanCpi filters out entries with a non-numeric value", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "202501000000", $: "107.5" },
+            { "@time": "202502000000", $: "-" },
+          ],
+        },
+      },
+    },
+  };
+
+  const result = normalizeJapanCpi(raw);
+
+  assert.equal(result.points.length, 1);
+});
+
+test("fetchJapanCpi requests e-Stat's getStatsData with the given appId and statsDataId", async () => {
+  const requestedUrls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(url.toString());
+    return { json: async () => ({}) };
+  };
+
+  try {
+    await fetchJapanCpi("test-app-id", "0000000000");
+    assert.equal(requestedUrls.length, 1);
+    assert.match(requestedUrls[0], /appId=test-app-id/);
+    assert.match(requestedUrls[0], /statsDataId=0000000000/);
   } finally {
     globalThis.fetch = originalFetch;
   }

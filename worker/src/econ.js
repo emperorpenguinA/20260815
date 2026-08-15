@@ -50,3 +50,38 @@ function toMonthString(yyyymm) {
   const s = String(yyyymm);
   return `${s.slice(0, 4)}-${s.slice(4, 6)}`;
 }
+
+const ESTAT_DATA_BASE = "https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData";
+
+// e-Statの統計表ID(statsDataId)は、e-Statへのユーザー登録・appId取得後でないと
+// 確認できない外部依存値。docs/deploy-cloudflare.md の手順に沿って実際の値に
+// 置き換えること(js/config.js の WORKER_BASE_URL と同じ扱いのプレースホルダー)。
+export const JAPAN_CPI_STATS_DATA_ID = "YOUR-ESTAT-STATS-DATA-ID";
+
+export async function fetchJapanCpi(appId, statsDataId) {
+  const url = `${ESTAT_DATA_BASE}?appId=${encodeURIComponent(appId)}&statsDataId=${encodeURIComponent(statsDataId)}&metaGetFlg=N&cntGetFlg=N`;
+  const res = await fetch(url);
+  return res.json();
+}
+
+export function normalizeJapanCpi(raw) {
+  const rawValues = raw?.GET_STATS_DATA?.STATISTICAL_DATA?.DATA_INF?.VALUE;
+  if (!rawValues) {
+    throw new Error("消費者物価指数データが見つかりません");
+  }
+
+  const list = Array.isArray(rawValues) ? rawValues : [rawValues];
+
+  const points = list
+    .map((v) => ({ date: toEstatMonthString(v["@time"]), value: Number(v["$"]) }))
+    .filter((p) => p.date !== null && !Number.isNaN(p.value))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return { points };
+}
+
+function toEstatMonthString(time) {
+  const match = /^(\d{4})(\d{2})/.exec(String(time ?? ""));
+  if (!match) return null;
+  return `${match[1]}-${match[2]}`;
+}
