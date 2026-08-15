@@ -1,5 +1,7 @@
 const YAHOO_CHART_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 const YAHOO_SEARCH_BASE = "https://query1.finance.yahoo.com/v1/finance/search";
+const YAHOO_JP_SEARCH_BASE = "https://finance.yahoo.co.jp/search/";
+const PRELOADED_STATE_MARKER = "window.__PRELOADED_STATE__ = ";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
@@ -43,6 +45,17 @@ export async function fetchSearch(query) {
   const url = `${YAHOO_SEARCH_BASE}?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&lang=ja-JP&region=JP`;
   const res = await fetchWithRetry(url, { headers: { "User-Agent": USER_AGENT } });
   return res.json();
+}
+
+// Best-effort supplement for Japanese company-name search, which query1's
+// unofficial search endpoint matches poorly (e.g. "UFJ" never surfaces the
+// Tokyo-listed 8306.T). finance.yahoo.co.jp has no public JSON API for this,
+// so this scrapes the JSON state embedded in its search results page. A
+// single attempt, no retry: this is a supplement, not the primary source.
+export async function fetchJapanSearchHtml(query) {
+  const url = `${YAHOO_JP_SEARCH_BASE}?query=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  return res.text();
 }
 
 export function normalizeChart(raw) {
@@ -96,4 +109,79 @@ export function normalizeSearch(raw) {
 
 function toDateString(unixSeconds) {
   return new Date(unixSeconds * 1000).toISOString().slice(0, 10);
+}
+
+// Extracts the JSON assigned to `window.__PRELOADED_STATE__ = {...};` in a
+// finance.yahoo.co.jp page. Brace-depth matching (rather than a regex) is
+// needed because the JSON itself contains braces inside string values.
+export function extractPreloadedState(html) {
+  const markerIndex = html.indexOf(PRELOADED_STATE_MARKER);
+  if (markerIndex === -1) return null;
+
+  const start = markerIndex + PRELOADED_STATE_MARKER.length;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let i = start;
+
+  for (; i < html.length; i++) {
+    const ch = html[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (ch === "\\") {
+        escape = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth++;
+    if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        i++;
+        break;
+      }
+    }
+  }
+
+  if (depth !== 0) return null;
+
+  try {
+    return JSON.parse(html.slice(start, i));
+  } catch {
+    return null;
+  }
+}
+
+export function normalizeJapanSearch(state) {
+  const results = state?.mainSearchList?.results || [];
+  return results
+    .map((r) => ({ symbol: toJapanSearchSymbol(r), name: r.name, exchange: r.marketName || "" }))
+    .filter((r) => r.symbol !== null)
+    .map((r) => ({ ...r, type: "EQUITY" }));
+}
+
+// Yahoo Japan's search mixes stocks, ETFs, and investment trusts (mutual
+// funds, which use an unrelated alphanumeric code namespace) in one flat
+// list, with no field distinguishing them other than marketName. Rather
+// than guess at a symbol for markets we haven't verified, unrecognized
+// entries are dropped.
+function toJapanSearchSymbol(result) {
+  const code = result?.code;
+  const marketName = result?.marketName || "";
+  if (typeof code !== "string") return null;
+
+  if (/^\d{4}$/.test(code) && marketName.startsWith("東証")) {
+    return `${code}.T`;
+  }
+  if (/^[A-Z][A-Z0-9.-]*$/.test(code) && marketName !== "投資信託" && !marketName.startsWith("東証")) {
+    return code;
+  }
+  return null;
 }

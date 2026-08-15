@@ -118,3 +118,87 @@ test("handleQuote echoes back the originally requested symbol, even when Yahoo's
     globalThis.fetch = originalFetch;
   }
 });
+
+test("handleSearch merges results from the primary search with the Japan-search supplement, deduplicated by symbol", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlString = url.toString();
+    if (urlString.includes("finance.yahoo.co.jp")) {
+      return {
+        text: async () =>
+          `window.__PRELOADED_STATE__ = ${JSON.stringify({
+            mainSearchList: {
+              results: [
+                { code: "8306", name: "三菱ＵＦＪフィナンシャル・グループ", marketName: "東証PRM" },
+                { code: "MUFG", name: "重複するはずの銘柄", marketName: "NYSE" },
+              ],
+            },
+          })};`,
+      };
+    }
+    return {
+      json: async () => ({
+        quotes: [{ symbol: "MUFG", shortname: "MITSUBISHI UFJ FINANCIAL", exchange: "NYQ", quoteType: "EQUITY" }],
+      }),
+    };
+  };
+
+  try {
+    const request = new Request("https://example.com/api/search?q=UFJ");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    const symbols = body.results.map((r) => r.symbol);
+    assert.deepEqual(symbols, ["MUFG", "8306.T"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handleSearch still returns primary results when the Japan-search supplement fails", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlString = url.toString();
+    if (urlString.includes("finance.yahoo.co.jp")) {
+      throw new Error("supplement unreachable");
+    }
+    return {
+      json: async () => ({
+        quotes: [{ symbol: "AAPL", shortname: "Apple Inc.", exchange: "NMS", quoteType: "EQUITY" }],
+      }),
+    };
+  };
+
+  try {
+    const request = new Request("https://example.com/api/search?q=apple");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    assert.deepEqual(
+      body.results.map((r) => r.symbol),
+      ["AAPL"]
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handleSearch still fails when the primary search itself fails, regardless of the supplement", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const urlString = url.toString();
+    if (urlString.includes("finance.yahoo.co.jp")) {
+      return { text: async () => "<html>no data</html>" };
+    }
+    throw new Error("primary search down");
+  };
+
+  try {
+    const request = new Request("https://example.com/api/search?q=apple");
+    const response = await handler.fetch(request);
+
+    assert.equal(response.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
