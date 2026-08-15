@@ -71,7 +71,16 @@ const ESTAT_DATA_BASE = "https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData
 export const JAPAN_CPI_STATS_DATA_ID = "0004052037";
 
 export async function fetchJapanCpi(appId, statsDataId) {
-  const url = `${ESTAT_DATA_BASE}?appId=${encodeURIComponent(appId)}&statsDataId=${encodeURIComponent(statsDataId)}&metaGetFlg=N&cntGetFlg=N`;
+  // statsDataId alone can return an entire table bundling many item/region
+  // categories together (confirmed against the actual table this project
+  // uses: 0004052037, a 47-city x 797-item x 3-measure table). Narrow the
+  // request to a single series via e-Stat's classification-axis params:
+  // cdCat01=0001 (総合, the all-items composite), cdArea=00000 (全国,
+  // e-Stat's standard nationwide code), cdTab=1 (指数, the raw index value,
+  // not one of the %-change variants — this app computes its own YoY%).
+  // Confirmed against real getMetaInfo output for this table (see
+  // toEstatMonthString below for the separate bug this masked).
+  const url = `${ESTAT_DATA_BASE}?appId=${encodeURIComponent(appId)}&statsDataId=${encodeURIComponent(statsDataId)}&cdCat01=0001&cdArea=00000&cdTab=1&metaGetFlg=N&cntGetFlg=N`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`e-Stat上流エラー: ${res.status}`);
@@ -125,8 +134,16 @@ function assertSingleSeries(list) {
   }
 }
 
+// e-Statの「時間軸(年・月)」区分は、月次コード(YYYY + "00" + MM + MM、月を
+// 2桁ずつ2回繰り返す — 例: "2026000707"=2026年7月)と、年度コード
+// (YYYY + "10" + "0000" — 例: "2025100000"=2025年度)・暦年コード
+// (YYYY + "000000" — 例: "2025000000"=2025年)が同じ表の@time値に混在する。
+// 旧実装は先頭4桁を年、続く2桁をそのまま月として読んでいたため、年度コードの
+// "10"を10月と誤認識して合格させる一方、月次コードは5〜6桁目が"00"のため
+// 不正な月として弾いていた(実際に発生した不具合: 年次データしか出ず、常に
+// 10月のみになる)。月次コードだけを厳密に一致させる。
 function toEstatMonthString(time) {
-  const match = /^(\d{4})(\d{2})/.exec(String(time ?? ""));
+  const match = /^(\d{4})00(\d{2})\2$/.exec(String(time ?? ""));
   if (!match) return null;
 
   const month = Number(match[2]);

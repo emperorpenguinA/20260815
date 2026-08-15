@@ -135,8 +135,8 @@ test("normalizeJapanCpi converts an array of VALUE entries into {date, value} po
       STATISTICAL_DATA: {
         DATA_INF: {
           VALUE: [
-            { "@time": "202501000000", $: "107.5" },
-            { "@time": "202502000000", $: "107.8" },
+            { "@time": "2025000101", $: "107.5" },
+            { "@time": "2025000202", $: "107.8" },
           ],
         },
       },
@@ -156,7 +156,7 @@ test("normalizeJapanCpi handles a single VALUE object (not wrapped in an array),
     GET_STATS_DATA: {
       STATISTICAL_DATA: {
         DATA_INF: {
-          VALUE: { "@time": "202501000000", $: "107.5" },
+          VALUE: { "@time": "2025000101", $: "107.5" },
         },
       },
     },
@@ -173,8 +173,8 @@ test("normalizeJapanCpi sorts points chronologically", () => {
       STATISTICAL_DATA: {
         DATA_INF: {
           VALUE: [
-            { "@time": "202502000000", $: "107.8" },
-            { "@time": "202501000000", $: "107.5" },
+            { "@time": "2025000202", $: "107.8" },
+            { "@time": "2025000101", $: "107.5" },
           ],
         },
       },
@@ -189,6 +189,26 @@ test("normalizeJapanCpi sorts points chronologically", () => {
   );
 });
 
+test("normalizeJapanCpi keeps only genuine monthly points, filtering out annual/fiscal-year time codes that e-Stat mixes into the same @time axis (regression test for the bug where fiscal-year codes like '2025100000' were misread as October and real monthly codes like '2026000707' were dropped)", () => {
+  const raw = {
+    GET_STATS_DATA: {
+      STATISTICAL_DATA: {
+        DATA_INF: {
+          VALUE: [
+            { "@time": "2026000707", $: "110.2" }, // 2026年7月 (monthly)
+            { "@time": "2025100000", $: "999.9" }, // 2025年度 (fiscal year)
+            { "@time": "2025000000", $: "888.8" }, // 2025年 (calendar year)
+          ],
+        },
+      },
+    },
+  };
+
+  const result = normalizeJapanCpi(raw);
+
+  assert.deepEqual(result.points, [{ date: "2026-07", value: 110.2 }]);
+});
+
 test("normalizeJapanCpi throws when DATA_INF.VALUE is missing", () => {
   assert.throws(() => normalizeJapanCpi({}), /消費者物価指数データが見つかりません/);
 });
@@ -199,8 +219,8 @@ test("normalizeJapanCpi filters out entries with a non-numeric value", () => {
       STATISTICAL_DATA: {
         DATA_INF: {
           VALUE: [
-            { "@time": "202501000000", $: "107.5" },
-            { "@time": "202502000000", $: "-" },
+            { "@time": "2025000101", $: "107.5" },
+            { "@time": "2025000202", $: "-" },
           ],
         },
       },
@@ -252,8 +272,8 @@ test("normalizeJapanCpi succeeds when all entries share the same classification 
       STATISTICAL_DATA: {
         DATA_INF: {
           VALUE: [
-            { "@time": "202501", "@area": "00000", "@cat01": "0001", $: "107.5" },
-            { "@time": "202502", "@area": "00000", "@cat01": "0001", $: "107.8" },
+            { "@time": "2025000101", "@area": "00000", "@cat01": "0001", $: "107.5" },
+            { "@time": "2025000202", "@area": "00000", "@cat01": "0001", $: "107.8" },
           ],
         },
       },
@@ -265,12 +285,12 @@ test("normalizeJapanCpi succeeds when all entries share the same classification 
   assert.equal(result.points.length, 2);
 });
 
-test("toEstatMonthString rejects an out-of-range month (e.g. '00'), which normalizeJapanCpi then reports as an unrecognized time-code format if it's the only entry", () => {
+test("toEstatMonthString rejects a calendar-year time code (e.g. '2025000000', month digits '00'), which normalizeJapanCpi then reports as an unrecognized time-code format if it's the only entry", () => {
   const raw = {
     GET_STATS_DATA: {
       STATISTICAL_DATA: {
         DATA_INF: {
-          VALUE: [{ "@time": "202500999999", $: "107.5" }],
+          VALUE: [{ "@time": "2025000000", $: "107.5" }],
         },
       },
     },
@@ -302,6 +322,16 @@ test("fetchJapanCpi requests e-Stat's getStatsData with the given appId and stat
     assert.equal(requestedUrls.length, 1);
     assert.match(requestedUrls[0], /appId=test-app-id/);
     assert.match(requestedUrls[0], /statsDataId=0000000000/);
+    // Narrow the request to a single series: cat01=0001 (総合, all-items
+    // composite), area=00000 (全国, nationwide — e-Stat's standard code for
+    // national totals), tab=1 (指数, the raw index value, not %-change
+    // variants). Without this, statsDataId alone can return an entire table
+    // bundling many item/region categories together (see the table this
+    // project actually hit: 0004052037, a 47-city x 797-item x 3-measure
+    // table), which assertSingleSeries then correctly rejects.
+    assert.match(requestedUrls[0], /cdCat01=0001/);
+    assert.match(requestedUrls[0], /cdArea=00000/);
+    assert.match(requestedUrls[0], /cdTab=1/);
   } finally {
     globalThis.fetch = originalFetch;
   }
