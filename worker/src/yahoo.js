@@ -162,16 +162,20 @@ export function extractPreloadedState(html) {
 export function normalizeJapanSearch(state) {
   const results = state?.mainSearchList?.results || [];
   return results
-    .map((r) => ({ symbol: toJapanSearchSymbol(r), name: r.name, exchange: r.marketName || "" }))
-    .filter((r) => r.symbol !== null)
-    .map((r) => ({ ...r, type: "EQUITY" }));
+    .map((r) => ({
+      symbol: toJapanSearchSymbol(r),
+      name: r.name,
+      exchange: r.marketName || "",
+      type: r.marketName === "外国為替" ? "CURRENCY" : "EQUITY",
+    }))
+    .filter((r) => r.symbol !== null);
 }
 
-// Yahoo Japan's search mixes stocks, ETFs, and investment trusts (mutual
-// funds, which use an unrelated alphanumeric code namespace) in one flat
-// list, with no field distinguishing them other than marketName. Rather
-// than guess at a symbol for markets we haven't verified, unrecognized
-// entries are dropped.
+// Yahoo Japan's search mixes stocks, currency pairs, ETFs, and investment
+// trusts (mutual funds, which use an unrelated alphanumeric code namespace)
+// in one flat list, with no field distinguishing them other than
+// marketName. Rather than guess at a symbol for markets we haven't
+// verified, unrecognized entries are dropped.
 function toJapanSearchSymbol(result) {
   const code = result?.code;
   const marketName = result?.marketName || "";
@@ -179,6 +183,9 @@ function toJapanSearchSymbol(result) {
 
   if (/^\d{4}$/.test(code) && marketName.startsWith("東証")) {
     return `${code}.T`;
+  }
+  if (marketName === "外国為替" && /^[A-Z0-9]+=X$/.test(code)) {
+    return code;
   }
   if (/^[A-Z][A-Z0-9.-]*$/.test(code) && marketName !== "投資信託" && !marketName.startsWith("東証")) {
     return code;
