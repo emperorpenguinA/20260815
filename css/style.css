@@ -1,0 +1,66 @@
+:root {
+  --color-bg: #f7f8fa;
+  --color-surface: #ffffff;
+  --color-text: #1a1a1a;
+  --color-muted: #6b7280;
+  --color-border: #e5e7eb;
+  --color-positive: #1b7a3d;
+  --color-negative: #c0342c;
+  --color-accent: #2563eb;
+  --radius: 10px;
+  --spacing: 16px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+}
+
+.site-header {
+  padding: var(--spacing);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.site-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.site-header nav a {
+  color: var(--color-accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.glossary-list {
+  padding: var(--spacing);
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.glossary-category h2 {
+  border-bottom: 2px solid var(--color-border);
+  padding-bottom: 4px;
+  margin-top: 32px;
+}
+
+.glossary-entry {
+  margin: 16px 0;
+}
+
+.glossary-entry h3 {
+  margin-bottom: 4px;
+}
