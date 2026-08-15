@@ -68,7 +68,7 @@ const ESTAT_DATA_BASE = "https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData
 // e-Statの統計表ID(statsDataId)は、e-Statへのユーザー登録・appId取得後でないと
 // 確認できない外部依存値。docs/deploy-cloudflare.md の手順に沿って実際の値に
 // 置き換えること(js/config.js の WORKER_BASE_URL と同じ扱いのプレースホルダー)。
-export const JAPAN_CPI_STATS_DATA_ID = "YOUR-ESTAT-STATS-DATA-ID";
+export const JAPAN_CPI_STATS_DATA_ID = "0004052037";
 
 export async function fetchJapanCpi(appId, statsDataId) {
   const url = `${ESTAT_DATA_BASE}?appId=${encodeURIComponent(appId)}&statsDataId=${encodeURIComponent(statsDataId)}&metaGetFlg=N&cntGetFlg=N`;
