@@ -93,6 +93,34 @@ test("normalizeSearch returns an empty array when quotes is missing", () => {
   assert.deepEqual(results, []);
 });
 
+test("normalizeSearch prefers longname over shortname (Yahoo localizes longname, not shortname)", () => {
+  const raw = {
+    quotes: [
+      {
+        symbol: "7203.T",
+        shortname: "TOYOTA MOTOR CORP",
+        longname: "トヨタ自動車",
+        exchange: "JPX",
+        quoteType: "EQUITY",
+      },
+    ],
+  };
+
+  const results = normalizeSearch(raw);
+
+  assert.equal(results[0].name, "トヨタ自動車");
+});
+
+test("normalizeSearch falls back to shortname when longname is absent", () => {
+  const raw = {
+    quotes: [{ symbol: "AAPL", shortname: "Apple Inc.", exchange: "NMS", quoteType: "EQUITY" }],
+  };
+
+  const results = normalizeSearch(raw);
+
+  assert.equal(results[0].name, "Apple Inc.");
+});
+
 test("fetchChart retries on a transient 503 and succeeds on the next attempt", async () => {
   let calls = 0;
   const originalFetch = globalThis.fetch;

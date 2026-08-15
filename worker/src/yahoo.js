@@ -40,7 +40,7 @@ export async function fetchChart(symbol, range, interval) {
 }
 
 export async function fetchSearch(query) {
-  const url = `${YAHOO_SEARCH_BASE}?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0`;
+  const url = `${YAHOO_SEARCH_BASE}?q=${encodeURIComponent(query)}&quotesCount=10&newsCount=0&lang=ja-JP&region=JP`;
   const res = await fetchWithRetry(url, { headers: { "User-Agent": USER_AGENT } });
   return res.json();
 }
@@ -88,7 +88,7 @@ export function normalizeSearch(raw) {
     .filter((q) => q.symbol && KNOWN_QUOTE_TYPES.has(q.quoteType))
     .map((q) => ({
       symbol: q.symbol,
-      name: q.shortname || q.longname || q.symbol,
+      name: q.longname || q.shortname || q.symbol,
       exchange: q.exchange || "",
       type: q.quoteType || "",
     }));
