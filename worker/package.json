@@ -1,0 +1,5 @@
+{
+  "name": "investment-dashboard-worker",
+  "private": true,
+  "type": "module"
+}
