@@ -93,11 +93,19 @@ function renderCardBody(symbol, quote, points) {
       ${changeSign}${formatNumber(quote.change)} (${changeSign}${formatNumber(quote.changePercent)}%)
     </div>
     <div class="card-chart"></div>
+    <div class="card-chart-caption"></div>
   `;
 
   const chartContainer = body.querySelector(".card-chart");
+  const chartCaptionEl = body.querySelector(".card-chart-caption");
   if (points && points.length > 0) {
     renderSparkline(chartContainer, points);
+
+    const closes = points.map((p) => p.close);
+    const min = Math.min(...closes);
+    const max = Math.max(...closes);
+    const currencyLabel = quote.currency ? ` ${quote.currency}` : "";
+    chartCaptionEl.textContent = `3ヶ月: ${formatNumber(min)} 〜 ${formatNumber(max)}${currencyLabel}`;
   }
 
   initTooltips(body);

@@ -203,6 +203,13 @@ main {
   margin-top: 12px;
 }
 
+.card-chart-caption {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  margin-top: 4px;
+  text-align: right;
+}
+
 .card-error {
   color: var(--color-negative);
   font-size: 0.9rem;
