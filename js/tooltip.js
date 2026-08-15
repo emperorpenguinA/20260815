@@ -3,11 +3,13 @@ import { GLOSSARY_TERMS } from "./glossary-terms.js";
 const TERMS_BY_ID = new Map(GLOSSARY_TERMS.map((term) => [term.id, term]));
 
 let activePopover = null;
+let activeButton = null;
 
 function closePopover() {
   if (activePopover) {
     activePopover.remove();
     activePopover = null;
+    activeButton = null;
   }
 }
 
@@ -26,6 +28,7 @@ function openPopover(button, term) {
   popover.style.left = `${button.offsetLeft}px`;
 
   activePopover = popover;
+  activeButton = button;
 }
 
 export function initTooltips(root) {
@@ -34,7 +37,7 @@ export function initTooltips(root) {
       event.stopPropagation();
       const term = TERMS_BY_ID.get(button.dataset.term);
       if (!term) return;
-      if (activePopover && activePopover.parentElement === button.parentElement) {
+      if (activeButton === button) {
         closePopover();
         return;
       }
