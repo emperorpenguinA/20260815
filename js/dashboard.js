@@ -4,6 +4,7 @@ import { renderSparkline } from "./chart.js";
 import { initTooltips } from "./tooltip.js";
 
 let watchlist = loadWatchlist();
+let loadGeneration = 0;
 
 const gridEl = document.getElementById("watchlist-grid");
 const searchInputEl = document.getElementById("search-input");
@@ -93,19 +94,23 @@ function renderCardBody(symbol, quote, points) {
   initTooltips(body);
 }
 
-async function refreshCard(item) {
-  try {
-    const [quotesResponse, chart] = await Promise.all([
-      fetchQuotes([item.symbol]),
-      fetchChart(item.symbol, "3mo", "1d"),
-    ]);
-    const quote = quotesResponse.quotes[0];
-    renderCardBody(item.symbol, quote, chart.points);
-    return !quote.error;
-  } catch (err) {
-    renderCardBody(item.symbol, { symbol: item.symbol, error: true, message: err.message }, []);
+async function refreshCard(item, generation) {
+  const [quoteResult, chartResult] = await Promise.allSettled([
+    fetchQuotes([item.symbol]),
+    fetchChart(item.symbol, "3mo", "1d"),
+  ]);
+
+  if (generation !== loadGeneration) return true;
+
+  if (quoteResult.status === "rejected") {
+    renderCardBody(item.symbol, { symbol: item.symbol, error: true, message: quoteResult.reason.message }, []);
     return false;
   }
+
+  const quote = quoteResult.value.quotes[0];
+  const points = chartResult.status === "fulfilled" ? chartResult.value.points : [];
+  renderCardBody(item.symbol, quote, points);
+  return !quote.error;
 }
 
 async function loadData() {
@@ -114,7 +119,12 @@ async function loadData() {
     return;
   }
 
-  const results = await Promise.all(watchlist.map((item) => refreshCard(item)));
+  loadGeneration += 1;
+  const generation = loadGeneration;
+
+  const results = await Promise.all(watchlist.map((item) => refreshCard(item, generation)));
+  if (generation !== loadGeneration) return;
+
   const allFailed = results.every((ok) => !ok);
   pageBannerEl.hidden = !allFailed;
 }
