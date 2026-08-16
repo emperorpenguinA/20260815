@@ -326,6 +326,19 @@ main {
   margin: 32px 0 16px;
 }
 
+.subsection-heading {
+  font-size: 1rem;
+  margin: 24px 0 12px;
+  color: var(--color-muted);
+}
+
+.card-note {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+  margin-top: 6px;
+  font-style: italic;
+}
+
 .card-price.positive {
   color: var(--color-positive);
 }

@@ -38,8 +38,17 @@
     <button type="button" data-months="120">10年</button>
   </div>
   <div id="econ-grid" class="econ-grid"></div>
+  <h3 class="subsection-heading">購買力平価(PPP)</h3>
+  <div id="ppp-period-selector" class="period-selector" role="group" aria-label="購買力平価の表示期間">
+    <button type="button" data-months="12">1年</button>
+    <button type="button" data-months="36" class="active">3年</button>
+    <button type="button" data-months="60">5年</button>
+    <button type="button" data-months="120">10年</button>
+  </div>
+  <div id="ppp-grid" class="econ-grid"></div>
 </main>
 <script type="module" src="js/dashboard.js"></script>
 <script type="module" src="js/econ.js"></script>
+<script type="module" src="js/ppp.js"></script>
 </body>
 </html>

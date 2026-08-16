@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import handler from "../src/index.js";
+import {
+  PPP_CURRENCIES,
+} from "../src/ppp.js";
 
 test("handleQuote requests a 1-day range from upstream (so previousClose is yesterday's close, not N days ago)", async () => {
   const requestedUrls = [];
@@ -372,6 +375,169 @@ test("handleEcon clamps an out-of-range ?months= value (below the 6-month minimu
     const jpPpiDomestic = body.indicators.find((i) => i.id === "jp-ppi-domestic");
     // Clamped to the 6-month minimum, not literally truncated to 1 point.
     assert.equal(jpPpiDomestic.points.length, 6);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+function mockPppFetch({ worldBank, chartsBySymbol }) {
+  return async (url) => {
+    const urlString = url.toString();
+    if (urlString.includes("api.worldbank.org")) {
+      if (worldBank instanceof Error) throw worldBank;
+      return { ok: true, json: async () => worldBank };
+    }
+    for (const [symbol, response] of Object.entries(chartsBySymbol)) {
+      if (urlString.includes(`/chart/${encodeURIComponent(symbol)}?`)) {
+        if (response instanceof Error) throw response;
+        return { ok: true, json: async () => response };
+      }
+    }
+    throw new Error(`unexpected URL: ${urlString}`);
+  };
+}
+
+function fakeChartResponse(symbol, currency, monthlyCloses) {
+  // monthlyCloses[i] is the close for the i-th month, oldest first.
+  const base = Date.UTC(2024, 0, 1) / 1000;
+  const dayMs = 30 * 24 * 3600;
+  return {
+    chart: {
+      result: [
+        {
+          meta: { symbol, currency, regularMarketPrice: monthlyCloses.at(-1), chartPreviousClose: monthlyCloses.at(-1) },
+          timestamp: monthlyCloses.map((_, i) => base + i * dayMs),
+          indicators: { quote: [{ close: monthlyCloses }] },
+        },
+      ],
+      error: null,
+    },
+  };
+}
+
+function fakeWorldBankResponse(entries) {
+  // entries: [{ iso3, date, value }]
+  return [
+    { page: 1 },
+    entries.map((e) => ({ countryiso3code: e.iso3, date: String(e.date), value: e.value })),
+  ];
+}
+
+test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal, and computes the over/undervaluation percent", async () => {
+  const originalFetch = globalThis.fetch;
+  // Two years of PPP data (2024 and 2025) so the fixture's chart points —
+  // which span Jan-Mar 2024 — have an applicable PPP year to forward-fill
+  // from; a single 2025-only fixture would leave `points` all-null (correct
+  // behavior, but not what this test's chart dates are meant to exercise).
+  const worldBank = fakeWorldBankResponse([
+    { iso3: "JPN", date: 2025, value: 97.08 },
+    { iso3: "JPN", date: 2024, value: 94.462599 },
+    { iso3: "DEU", date: 2025, value: 0.71 },
+    { iso3: "DEU", date: 2024, value: 0.700862 },
+    { iso3: "GBR", date: 2025, value: 0.677133 },
+    { iso3: "GBR", date: 2024, value: 0.664153 },
+    { iso3: "CHN", date: 2025, value: 3.397686 },
+    { iso3: "CHN", date: 2024, value: 3.525379 },
+    { iso3: "AUS", date: 2025, value: 1.398943 },
+    { iso3: "AUS", date: 2024, value: 1.366527 },
+    { iso3: "CAN", date: 2025, value: 1.166683 },
+    { iso3: "CAN", date: 2024, value: 1.150472 },
+  ]);
+  const chartsBySymbol = {
+    "JPY=X": fakeChartResponse("JPY=X", "JPY", [150, 155, 159.31]),
+    "EURUSD=X": fakeChartResponse("EURUSD=X", "USD", [1.1, 1.12, 1.1573]),
+    "GBPUSD=X": fakeChartResponse("GBPUSD=X", "USD", [1.3, 1.32, 1.3536]),
+    "CNY=X": fakeChartResponse("CNY=X", "CNY", [6.6, 6.7, 6.7322]),
+    "AUDUSD=X": fakeChartResponse("AUDUSD=X", "USD", [0.7, 0.71, 0.7087]),
+    "CAD=X": fakeChartResponse("CAD=X", "CAD", [1.35, 1.37, 1.3872]),
+  };
+  globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
+
+  try {
+    const request = new Request("https://example.com/api/ppp");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    assert.equal(body.indicators.length, 6);
+
+    const jpy = body.indicators.find((i) => i.currency === "JPY");
+    assert.equal(jpy.error, undefined);
+    assert.equal(jpy.pair, "USD/JPY");
+    assert.equal(jpy.latestActual, 159.31);
+    assert.equal(jpy.latestPpp, 97.08);
+    assert.equal(jpy.pppYear, 2025);
+    assert.ok(jpy.overUndervaluedPercent > 60 && jpy.overUndervaluedPercent < 65);
+    assert.equal(jpy.note, null);
+
+    const eur = body.indicators.find((i) => i.currency === "EUR");
+    // EURUSD=X's last close is 1.1573 (USD per EUR); inverted, actual should be 1/1.1573.
+    assert.ok(Math.abs(eur.latestActual - 1 / 1.1573) < 1e-6);
+    assert.match(eur.note, /ドイツ/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handlePpp isolates a per-currency chart failure without failing the whole batch", async () => {
+  const originalFetch = globalThis.fetch;
+  const worldBank = fakeWorldBankResponse(
+    PPP_CURRENCIES.map((c) => ({ iso3: c.iso3, date: 2025, value: 100 }))
+  );
+  const chartsBySymbol = Object.fromEntries(
+    PPP_CURRENCIES.map((c) => [c.yahooSymbol, fakeChartResponse(c.yahooSymbol, c.currency, [100, 101, 102])])
+  );
+  chartsBySymbol["JPY=X"] = new Error("network down");
+  globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
+
+  try {
+    const request = new Request("https://example.com/api/ppp");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    const jpy = body.indicators.find((i) => i.currency === "JPY");
+    assert.equal(jpy.error, true);
+
+    const cny = body.indicators.find((i) => i.currency === "CNY");
+    assert.equal(cny.error, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handlePpp marks every currency as failed when the World Bank request itself fails", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = mockPppFetch({ worldBank: new Error("World Bank unreachable"), chartsBySymbol: {} });
+
+  try {
+    const request = new Request("https://example.com/api/ppp");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    assert.equal(body.indicators.length, 6);
+    assert.ok(body.indicators.every((i) => i.error === true));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handlePpp truncates points to the ?months= query param", async () => {
+  const originalFetch = globalThis.fetch;
+  const worldBank = fakeWorldBankResponse(
+    PPP_CURRENCIES.map((c) => ({ iso3: c.iso3, date: 2025, value: 100 }))
+  );
+  const closes = Array.from({ length: 24 }, (_, i) => 100 + i);
+  const chartsBySymbol = Object.fromEntries(
+    PPP_CURRENCIES.map((c) => [c.yahooSymbol, fakeChartResponse(c.yahooSymbol, c.currency, closes)])
+  );
+  globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
+
+  try {
+    const request = new Request("https://example.com/api/ppp?months=6");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    const jpy = body.indicators.find((i) => i.currency === "JPY");
+    assert.equal(jpy.points.length, 6);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -20,6 +20,15 @@ import {
   normalizeUsIndicator,
   FRED_SERIES,
 } from "./econ.js";
+import {
+  PPP_CURRENCIES,
+  fetchWorldBankPpp,
+  normalizeWorldBankPpp,
+  latestPppEntry,
+  forwardFillPpp,
+  toLcuPerUsd,
+  computeOverUndervaluedPercent,
+} from "./ppp.js";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -45,7 +54,10 @@ export default {
       return handleSearch(url);
     }
     if (url.pathname === "/api/econ") {
-      return handleEcon(env, parseEconMonths(url));
+      return handleEcon(env, parseMonthsParam(url));
+    }
+    if (url.pathname === "/api/ppp") {
+      return handlePpp(parseMonthsParam(url));
     }
 
     return jsonResponse({ error: true, message: "not found" }, 404);
@@ -150,26 +162,26 @@ async function fetchJapanSearchSupplement(query) {
   }
 }
 
-const ECON_DEFAULT_MONTHS = 36;
-const ECON_MIN_MONTHS = 6;
-const ECON_MAX_MONTHS = 600;
+const MONTHS_DEFAULT = 36;
+const MONTHS_MIN = 6;
+const MONTHS_MAX = 600;
 
-// フロントエンドの期間選択(1年/3年/5年/10年)から渡される。範囲外・不正な
-// 値は既定の3年にフォールバックする。
-function parseEconMonths(url) {
+// フロントエンドの期間選択(1年/3年/5年/10年)から渡される。/api/econと
+// /api/pppの両方で共有する。範囲外・不正な値は既定の3年にフォールバックする。
+function parseMonthsParam(url) {
   const param = url.searchParams.get("months");
   // searchParams.get() returns null when absent, and Number(null) is 0
   // (not NaN) — check for the missing case explicitly before coercing.
-  if (param === null) return ECON_DEFAULT_MONTHS;
+  if (param === null) return MONTHS_DEFAULT;
 
   const raw = Number(param);
   if (!Number.isFinite(raw) || !Number.isInteger(raw)) {
-    return ECON_DEFAULT_MONTHS;
+    return MONTHS_DEFAULT;
   }
-  return Math.min(ECON_MAX_MONTHS, Math.max(ECON_MIN_MONTHS, raw));
+  return Math.min(MONTHS_MAX, Math.max(MONTHS_MIN, raw));
 }
 
-async function handleEcon(env, months = ECON_DEFAULT_MONTHS) {
+async function handleEcon(env, months = MONTHS_DEFAULT) {
   const now = new Date();
   const endDate = formatYyyymm(now);
   const startDate = formatYyyymm(new Date(now.getFullYear(), now.getMonth() - months, 1));
@@ -240,6 +252,73 @@ async function handleEcon(env, months = ECON_DEFAULT_MONTHS) {
         };
       } catch (err) {
         return { id: job.id, country: job.country, label: job.label, error: true, message: err.message };
+      }
+    })
+  );
+
+  return jsonResponse({ indicators });
+}
+
+async function handlePpp(months = MONTHS_DEFAULT) {
+  const now = new Date();
+  const endYear = now.getFullYear();
+  const startYear = endYear - 15; // 10年(120ヶ月)の最大選択期間 + 予備で十分な幅
+
+  let pppRaw;
+  let pppFetchError = null;
+  try {
+    pppRaw = await fetchWorldBankPpp(
+      PPP_CURRENCIES.map((c) => c.iso3),
+      startYear,
+      endYear
+    );
+  } catch (err) {
+    pppFetchError = err;
+  }
+
+  const indicators = await Promise.all(
+    PPP_CURRENCIES.map(async (config) => {
+      try {
+        if (pppFetchError) throw pppFetchError;
+
+        const pppByYear = normalizeWorldBankPpp(pppRaw, config.iso3);
+        const latest = latestPppEntry(pppByYear);
+        if (!latest) {
+          throw new Error(`PPPデータが見つかりません: ${config.iso3}`);
+        }
+
+        const chartRaw = await fetchChart(config.yahooSymbol, "10y", "1mo");
+        const { points: rawPoints } = normalizeChart(chartRaw);
+        const monthlyPoints = takeRecentMonths(
+          rawPoints
+            .map((p) => ({
+              date: typeof p.date === "string" ? p.date.slice(0, 7) : null,
+              value: toLcuPerUsd(p.close, config.invert),
+            }))
+            .filter((p) => p.date !== null && typeof p.value === "number"),
+          months
+        );
+
+        const monthDates = monthlyPoints.map((p) => p.date);
+        const pppSeries = forwardFillPpp(monthDates, pppByYear);
+        const points = monthlyPoints
+          .map((p, i) => ({ date: p.date, actual: p.value, ppp: pppSeries[i] }))
+          .filter((p) => typeof p.ppp === "number");
+
+        const latestActual = monthlyPoints.length > 0 ? monthlyPoints[monthlyPoints.length - 1].value : null;
+
+        return {
+          currency: config.currency,
+          pair: config.pair,
+          points,
+          latestActual,
+          latestPpp: latest.value,
+          pppYear: latest.year,
+          overUndervaluedPercent: computeOverUndervaluedPercent(latestActual, latest.value),
+          note: config.note,
+        };
+      } catch (err) {
+        return { currency: config.currency, pair: config.pair, error: true, message: err.message };
       }
     })
   );
