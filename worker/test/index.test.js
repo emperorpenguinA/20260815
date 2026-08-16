@@ -424,7 +424,7 @@ function fakeWorldBankResponse(entries) {
   ];
 }
 
-test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal, and computes the over/undervaluation percent", async () => {
+test("handlePpp aggregates all 10 currencies, converts EUR/GBP/AUD/NZD via reciprocal, and computes the over/undervaluation percent", async () => {
   const originalFetch = globalThis.fetch;
   // Two years of PPP data (2024 and 2025) so the fixture's chart points —
   // which span Jan-Mar 2024 — have an applicable PPP year to forward-fill
@@ -443,6 +443,14 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     { iso3: "AUS", date: 2024, value: 1.366527 },
     { iso3: "CAN", date: 2025, value: 1.166683 },
     { iso3: "CAN", date: 2024, value: 1.150472 },
+    { iso3: "NZL", date: 2025, value: 1.4730 },
+    { iso3: "NZL", date: 2024, value: 1.4639 },
+    { iso3: "TUR", date: 2025, value: 16.2036 },
+    { iso3: "TUR", date: 2024, value: 11.5545 },
+    { iso3: "MEX", date: 2025, value: 10.3290 },
+    { iso3: "MEX", date: 2024, value: 9.9166 },
+    { iso3: "ZAF", date: 2025, value: 7.4203 },
+    { iso3: "ZAF", date: 2024, value: 7.4211 },
   ]);
   const chartsBySymbol = {
     "JPY=X": fakeChartResponse("JPY=X", "JPY", [150, 155, 159.31]),
@@ -456,6 +464,14 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     "CNYJPY=X": fakeChartResponse("CNYJPY=X", "JPY", [23, 23.3, 23.595]),
     "AUDJPY=X": fakeChartResponse("AUDJPY=X", "JPY", [110, 111, 112.879]),
     "CADJPY=X": fakeChartResponse("CADJPY=X", "JPY", [113, 114, 114.818]),
+    "NZDUSD=X": fakeChartResponse("NZDUSD=X", "USD", [0.58, 0.585, 0.5894]),
+    "TRY=X": fakeChartResponse("TRY=X", "TRY", [46, 47, 47.8605]),
+    "MXN=X": fakeChartResponse("MXN=X", "MXN", [16.8, 16.9, 17.015]),
+    "ZAR=X": fakeChartResponse("ZAR=X", "ZAR", [16.0, 16.1, 16.1664]),
+    "NZDJPY=X": fakeChartResponse("NZDJPY=X", "JPY", [92, 93, 93.884]),
+    "TRYJPY=X": fakeChartResponse("TRYJPY=X", "JPY", [3.2, 3.25, 3.278]),
+    "MXNJPY=X": fakeChartResponse("MXNJPY=X", "JPY", [9.2, 9.3, 9.328]),
+    "ZARJPY=X": fakeChartResponse("ZARJPY=X", "JPY", [9.7, 9.8, 9.843]),
   };
   globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
 
@@ -464,7 +480,7 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     const response = await handler.fetch(request);
     const body = await response.json();
 
-    assert.equal(body.indicators.length, 6);
+    assert.equal(body.indicators.length, 10);
 
     const jpy = body.indicators.find((i) => i.currency === "JPY");
     assert.equal(jpy.error, undefined);
@@ -480,7 +496,20 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     assert.ok(Math.abs(eur.latestActual - 1 / 1.1573) < 1e-6);
     assert.match(eur.note, /ドイツ/);
 
-    assert.equal(body.crossIndicators.length, 5);
+    const nzd = body.indicators.find((i) => i.currency === "NZD");
+    assert.equal(nzd.error, undefined);
+    assert.equal(nzd.pair, "USD/NZD");
+    // NZDUSD=X's last close is 0.5894 (USD per NZD); inverted, actual should be 1/0.5894.
+    assert.ok(Math.abs(nzd.latestActual - 1 / 0.5894) < 1e-6);
+    assert.equal(nzd.note, null);
+
+    const tryUsd = body.indicators.find((i) => i.currency === "TRY");
+    assert.equal(tryUsd.error, undefined);
+    assert.equal(tryUsd.pair, "USD/TRY");
+    // TRY=X is already TRY-per-USD; used directly, no inversion.
+    assert.equal(tryUsd.latestActual, 47.8605);
+
+    assert.equal(body.crossIndicators.length, 9);
 
     const eurJpy = body.crossIndicators.find((i) => i.currency === "EUR");
     assert.equal(eurJpy.error, undefined);
@@ -497,6 +526,14 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     assert.equal(cnyJpy.pair, "CNY/JPY");
     assert.equal(cnyJpy.latestActual, 23.595);
     assert.equal(cnyJpy.note, null);
+
+    const nzdJpy = body.crossIndicators.find((i) => i.currency === "NZD");
+    assert.equal(nzdJpy.error, undefined);
+    assert.equal(nzdJpy.pair, "NZD/JPY");
+    assert.equal(nzdJpy.latestActual, 93.884);
+    // PPP-implied NZD/JPY = JPY's PPP factor ÷ NZD's PPP factor = 97.08 / 1.4730.
+    assert.ok(Math.abs(nzdJpy.latestPpp - 97.08 / 1.473) < 1e-6);
+    assert.equal(nzdJpy.note, null);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -574,10 +611,10 @@ test("handlePpp marks every currency as failed when the World Bank request itsel
     const response = await handler.fetch(request);
     const body = await response.json();
 
-    assert.equal(body.indicators.length, 6);
+    assert.equal(body.indicators.length, 10);
     assert.ok(body.indicators.every((i) => i.error === true));
 
-    assert.equal(body.crossIndicators.length, 5);
+    assert.equal(body.crossIndicators.length, 9);
     assert.ok(body.crossIndicators.every((i) => i.error === true));
   } finally {
     globalThis.fetch = originalFetch;

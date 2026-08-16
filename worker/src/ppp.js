@@ -21,6 +21,10 @@ export const PPP_CURRENCIES = [
   { currency: "CNY", iso3: "CHN", yahooSymbol: "CNY=X", pair: "USD/CNY", invert: false, note: null },
   { currency: "AUD", iso3: "AUS", yahooSymbol: "AUDUSD=X", pair: "USD/AUD", invert: true, note: null },
   { currency: "CAD", iso3: "CAN", yahooSymbol: "CAD=X", pair: "USD/CAD", invert: false, note: null },
+  { currency: "NZD", iso3: "NZL", yahooSymbol: "NZDUSD=X", pair: "USD/NZD", invert: true, note: null },
+  { currency: "TRY", iso3: "TUR", yahooSymbol: "TRY=X", pair: "USD/TRY", invert: false, note: null },
+  { currency: "MXN", iso3: "MEX", yahooSymbol: "MXN=X", pair: "USD/MXN", invert: false, note: null },
+  { currency: "ZAR", iso3: "ZAF", yahooSymbol: "ZAR=X", pair: "USD/ZAR", invert: false, note: null },
 ];
 
 export async function fetchWorldBankPpp(iso3Codes, startYear, endYear) {
@@ -101,6 +105,10 @@ export const PPP_JPY_CROSS_CURRENCIES = [
   { currency: "CNY", iso3: "CHN", yahooSymbol: "CNYJPY=X", pair: "CNY/JPY", note: null },
   { currency: "AUD", iso3: "AUS", yahooSymbol: "AUDJPY=X", pair: "AUD/JPY", note: null },
   { currency: "CAD", iso3: "CAN", yahooSymbol: "CADJPY=X", pair: "CAD/JPY", note: null },
+  { currency: "NZD", iso3: "NZL", yahooSymbol: "NZDJPY=X", pair: "NZD/JPY", note: null },
+  { currency: "TRY", iso3: "TUR", yahooSymbol: "TRYJPY=X", pair: "TRY/JPY", note: null },
+  { currency: "MXN", iso3: "MEX", yahooSymbol: "MXNJPY=X", pair: "MXN/JPY", note: null },
+  { currency: "ZAR", iso3: "ZAF", yahooSymbol: "ZARJPY=X", pair: "ZAR/JPY", note: null },
 ];
 
 // 日本円(base)と対象通貨(quote)、両方のPPP変換係数がそろっている年だけを

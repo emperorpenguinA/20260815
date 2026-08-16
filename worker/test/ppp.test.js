@@ -12,9 +12,9 @@ import {
   buildCrossPppByYear,
 } from "../src/ppp.js";
 
-test("PPP_CURRENCIES lists exactly the 6 target currencies with the expected invert flags", () => {
+test("PPP_CURRENCIES lists exactly the 10 target currencies with the expected invert flags", () => {
   const byCurrency = Object.fromEntries(PPP_CURRENCIES.map((c) => [c.currency, c]));
-  assert.equal(PPP_CURRENCIES.length, 6);
+  assert.equal(PPP_CURRENCIES.length, 10);
   assert.equal(byCurrency.JPY.invert, false);
   assert.equal(byCurrency.CNY.invert, false);
   assert.equal(byCurrency.CAD.invert, false);
@@ -25,6 +25,16 @@ test("PPP_CURRENCIES lists exactly the 6 target currencies with the expected inv
   // has no PA.NUS.PPP data), and must carry a user-visible note about it.
   assert.equal(byCurrency.EUR.iso3, "DEU");
   assert.match(byCurrency.EUR.note, /ドイツ/);
+  // New currencies: NZD is quoted USD-per-unit on Yahoo (like EUR/GBP/AUD),
+  // TRY/MXN/ZAR are quoted unit-per-USD (like JPY/CNY/CAD).
+  assert.equal(byCurrency.NZD.invert, true);
+  assert.equal(byCurrency.TRY.invert, false);
+  assert.equal(byCurrency.MXN.invert, false);
+  assert.equal(byCurrency.ZAR.invert, false);
+  assert.equal(byCurrency.NZD.note, null);
+  assert.equal(byCurrency.TRY.note, null);
+  assert.equal(byCurrency.MXN.note, null);
+  assert.equal(byCurrency.ZAR.note, null);
 });
 
 test("PPP_CURRENCIES pair labels are all expressed as \"USD/<currency>\", matching the LCU-per-USD direction every rate is normalized to", () => {
@@ -36,6 +46,10 @@ test("PPP_CURRENCIES pair labels are all expressed as \"USD/<currency>\", matchi
     CNY: "USD/CNY",
     AUD: "USD/AUD",
     CAD: "USD/CAD",
+    NZD: "USD/NZD",
+    TRY: "USD/TRY",
+    MXN: "USD/MXN",
+    ZAR: "USD/ZAR",
   });
 });
 
@@ -145,14 +159,21 @@ test("fetchWorldBankPpp throws a clear error when the upstream response is not o
   }
 });
 
-test("PPP_JPY_CROSS_CURRENCIES lists exactly the 5 non-JPY target currencies, each compared directly against JPY", () => {
+test("PPP_JPY_CROSS_CURRENCIES lists exactly the 9 non-JPY target currencies, each compared directly against JPY", () => {
   const byCurrency = Object.fromEntries(PPP_JPY_CROSS_CURRENCIES.map((c) => [c.currency, c]));
-  assert.equal(PPP_JPY_CROSS_CURRENCIES.length, 5);
-  assert.deepEqual(Object.keys(byCurrency).sort(), ["AUD", "CAD", "CNY", "EUR", "GBP"]);
+  assert.equal(PPP_JPY_CROSS_CURRENCIES.length, 9);
+  assert.deepEqual(
+    Object.keys(byCurrency).sort(),
+    ["AUD", "CAD", "CNY", "EUR", "GBP", "MXN", "NZD", "TRY", "ZAR"]
+  );
   // EUR still uses Germany as the euro-area proxy, same as the USD-based comparison.
   assert.equal(byCurrency.EUR.iso3, "DEU");
   assert.match(byCurrency.EUR.note, /ドイツ/);
   assert.equal(byCurrency.GBP.note, null);
+  assert.equal(byCurrency.NZD.note, null);
+  assert.equal(byCurrency.TRY.note, null);
+  assert.equal(byCurrency.MXN.note, null);
+  assert.equal(byCurrency.ZAR.note, null);
 });
 
 test("PPP_JPY_CROSS_CURRENCIES pair labels and Yahoo symbols use the direct JPY-cross convention (e.g. EUR/JPY via EURJPY=X)", () => {
@@ -167,6 +188,14 @@ test("PPP_JPY_CROSS_CURRENCIES pair labels and Yahoo symbols use the direct JPY-
   assert.equal(byCurrency.AUD.yahooSymbol, "AUDJPY=X");
   assert.equal(byCurrency.CAD.pair, "CAD/JPY");
   assert.equal(byCurrency.CAD.yahooSymbol, "CADJPY=X");
+  assert.equal(byCurrency.NZD.pair, "NZD/JPY");
+  assert.equal(byCurrency.NZD.yahooSymbol, "NZDJPY=X");
+  assert.equal(byCurrency.TRY.pair, "TRY/JPY");
+  assert.equal(byCurrency.TRY.yahooSymbol, "TRYJPY=X");
+  assert.equal(byCurrency.MXN.pair, "MXN/JPY");
+  assert.equal(byCurrency.MXN.yahooSymbol, "MXNJPY=X");
+  assert.equal(byCurrency.ZAR.pair, "ZAR/JPY");
+  assert.equal(byCurrency.ZAR.yahooSymbol, "ZARJPY=X");
 });
 
 test("buildCrossPppByYear computes the base/quote ratio for years present in both maps", () => {
