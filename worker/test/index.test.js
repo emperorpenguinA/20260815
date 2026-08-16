@@ -502,6 +502,43 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
   }
 });
 
+test("handlePpp requests World Bank PPP data for the union of PPP_CURRENCIES and PPP_JPY_CROSS_CURRENCIES iso3 codes", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  const worldBank = fakeWorldBankResponse(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => ({ iso3: c.iso3, date: 2025, value: 100 }))
+  );
+  const chartsBySymbol = Object.fromEntries(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => [
+      c.yahooSymbol,
+      fakeChartResponse(c.yahooSymbol, c.currency, [100, 101, 102]),
+    ])
+  );
+  const innerFetch = mockPppFetch({ worldBank, chartsBySymbol });
+  globalThis.fetch = async (url, ...rest) => {
+    requestedUrls.push(url.toString());
+    return innerFetch(url, ...rest);
+  };
+
+  try {
+    const request = new Request("https://example.com/api/ppp");
+    const response = await handler.fetch(request);
+    await response.json();
+
+    const worldBankUrl = requestedUrls.find((u) => u.includes("api.worldbank.org"));
+    assert.ok(worldBankUrl, "expected a World Bank request URL to be captured");
+
+    const unionIso3 = [
+      ...new Set([...PPP_CURRENCIES.map((c) => c.iso3), ...PPP_JPY_CROSS_CURRENCIES.map((c) => c.iso3)]),
+    ];
+    for (const iso3 of unionIso3) {
+      assert.ok(worldBankUrl.includes(iso3), `expected World Bank URL to include ${iso3}`);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("handlePpp isolates a per-currency chart failure without failing the whole batch", async () => {
   const originalFetch = globalThis.fetch;
   const worldBank = fakeWorldBankResponse(

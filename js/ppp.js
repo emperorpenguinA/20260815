@@ -83,14 +83,14 @@ function renderPppCard(indicator, subjectCurrency, counterCurrency) {
 
 async function loadPppIndicators() {
   gridEl.innerHTML = "読み込み中...";
-  jpyGridEl.innerHTML = "読み込み中...";
+  if (jpyGridEl) jpyGridEl.innerHTML = "読み込み中...";
 
   let response;
   try {
     response = await fetchPpp(selectedMonths);
   } catch {
     gridEl.innerHTML = `<div class="card-error">購買力平価を取得できませんでした</div>`;
-    jpyGridEl.innerHTML = "";
+    if (jpyGridEl) jpyGridEl.innerHTML = "";
     return;
   }
 
@@ -99,9 +99,11 @@ async function loadPppIndicators() {
     gridEl.appendChild(renderPppCard(indicator, indicator.currency, null));
   }
 
-  jpyGridEl.innerHTML = "";
-  for (const indicator of response.crossIndicators) {
-    jpyGridEl.appendChild(renderPppCard(indicator, "JPY", indicator.currency));
+  if (jpyGridEl) {
+    jpyGridEl.innerHTML = "";
+    for (const indicator of response.crossIndicators ?? []) {
+      jpyGridEl.appendChild(renderPppCard(indicator, "JPY", indicator.currency));
+    }
   }
 }
 

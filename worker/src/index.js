@@ -266,14 +266,14 @@ async function handlePpp(months = MONTHS_DEFAULT) {
   const endYear = now.getFullYear();
   const startYear = endYear - 15; // 10年(120ヶ月)の最大選択期間 + 予備で十分な幅
 
+  const iso3Codes = [
+    ...new Set([...PPP_CURRENCIES.map((c) => c.iso3), ...PPP_JPY_CROSS_CURRENCIES.map((c) => c.iso3)]),
+  ];
+
   let pppRaw;
   let pppFetchError = null;
   try {
-    pppRaw = await fetchWorldBankPpp(
-      PPP_CURRENCIES.map((c) => c.iso3),
-      startYear,
-      endYear
-    );
+    pppRaw = await fetchWorldBankPpp(iso3Codes, startYear, endYear);
   } catch (err) {
     pppFetchError = err;
   }
