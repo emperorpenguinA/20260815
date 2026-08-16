@@ -4,6 +4,7 @@ import { initTooltips } from "./tooltip.js";
 
 const gridEl = document.getElementById("ppp-grid");
 const periodSelectorEl = document.getElementById("ppp-period-selector");
+const jpyGridEl = document.getElementById("ppp-jpy-grid");
 
 let selectedMonths = 36;
 
@@ -23,10 +24,10 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function renderPppCard(indicator) {
+function renderPppCard(indicator, subjectCurrency, counterCurrency) {
   const card = document.createElement("article");
   card.className = "card";
-  card.id = `ppp-${indicator.currency}`;
+  card.id = `ppp-${indicator.pair.replace("/", "-")}`;
 
   if (indicator.error) {
     card.innerHTML = `
@@ -46,10 +47,13 @@ function renderPppCard(indicator) {
 
   const changeValue = indicator.overUndervaluedPercent;
   const changeClass = typeof changeValue === "number" ? (changeValue >= 0 ? "positive" : "negative") : "";
+  const direction = typeof changeValue === "number" ? (changeValue >= 0 ? "割安" : "割高") : null;
   const valuationText =
-    typeof changeValue === "number"
-      ? `${indicator.currency}は理論値より${formatNumber(Math.abs(changeValue))}%${changeValue >= 0 ? "割安" : "割高"}`
-      : "-";
+    direction === null
+      ? "-"
+      : counterCurrency
+        ? `${subjectCurrency}は${counterCurrency}に対し理論値より${formatNumber(Math.abs(changeValue))}%${direction}`
+        : `${subjectCurrency}は理論値より${formatNumber(Math.abs(changeValue))}%${direction}`;
 
   card.innerHTML = `
     <div class="card-header">
@@ -79,18 +83,25 @@ function renderPppCard(indicator) {
 
 async function loadPppIndicators() {
   gridEl.innerHTML = "読み込み中...";
+  jpyGridEl.innerHTML = "読み込み中...";
 
   let response;
   try {
     response = await fetchPpp(selectedMonths);
   } catch {
     gridEl.innerHTML = `<div class="card-error">購買力平価を取得できませんでした</div>`;
+    jpyGridEl.innerHTML = "";
     return;
   }
 
   gridEl.innerHTML = "";
   for (const indicator of response.indicators) {
-    gridEl.appendChild(renderPppCard(indicator));
+    gridEl.appendChild(renderPppCard(indicator, indicator.currency, null));
+  }
+
+  jpyGridEl.innerHTML = "";
+  for (const indicator of response.crossIndicators) {
+    jpyGridEl.appendChild(renderPppCard(indicator, "JPY", indicator.currency));
   }
 }
 
