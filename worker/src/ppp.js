@@ -84,3 +84,33 @@ export function computeOverUndervaluedPercent(actualRate, pppRate) {
   }
   return ((actualRate - pppRate) / pppRate) * 100;
 }
+
+// 対米ドル比較のEURと同じく、World BankのEMU集計にPA.NUS.PPPがないため
+// ドイツを代表値として使う。Yahooのクロスシンボルは全て「1外貨=何円」の
+// 直接クオートで返る(実データで確認済み)ため、対米ドル比較のEUR/GBP/AUDと
+// 違い逆数変換は不要。
+export const PPP_JPY_CROSS_CURRENCIES = [
+  {
+    currency: "EUR",
+    iso3: "DEU",
+    yahooSymbol: "EURJPY=X",
+    pair: "EUR/JPY",
+    note: "ユーロ圏の代表値としてドイツの数値を使用",
+  },
+  { currency: "GBP", iso3: "GBR", yahooSymbol: "GBPJPY=X", pair: "GBP/JPY", note: null },
+  { currency: "CNY", iso3: "CHN", yahooSymbol: "CNYJPY=X", pair: "CNY/JPY", note: null },
+  { currency: "AUD", iso3: "AUS", yahooSymbol: "AUDJPY=X", pair: "AUD/JPY", note: null },
+  { currency: "CAD", iso3: "CAN", yahooSymbol: "CADJPY=X", pair: "CAD/JPY", note: null },
+];
+
+// 日本円(base)と対象通貨(quote)、両方のPPP変換係数がそろっている年だけを
+// 対象に、base÷quoteの比率を年ごとに計算する。forwardFillPppにそのまま
+// 渡せる{年: 値}の形で返す。
+export function buildCrossPppByYear(baseByYear, quoteByYear) {
+  const result = {};
+  for (const year of Object.keys(baseByYear)) {
+    if (!(year in quoteByYear)) continue;
+    result[year] = baseByYear[year] / quoteByYear[year];
+  }
+  return result;
+}
