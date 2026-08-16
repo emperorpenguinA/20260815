@@ -26,3 +26,8 @@ export function fetchEconIndicators(months) {
   const query = months ? `?months=${encodeURIComponent(months)}` : "";
   return getJson(`/api/econ${query}`);
 }
+
+export function fetchPpp(months) {
+  const query = months ? `?months=${encodeURIComponent(months)}` : "";
+  return getJson(`/api/ppp${query}`);
+}
