@@ -21,6 +21,9 @@ const CARD_ORDER = [
 ];
 
 const gridEl = document.getElementById("econ-grid");
+const periodSelectorEl = document.getElementById("econ-period-selector");
+
+let selectedMonths = 36;
 
 function formatNumber(value) {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -96,7 +99,7 @@ async function loadEconIndicators() {
 
   let response;
   try {
-    response = await fetchEconIndicators();
+    response = await fetchEconIndicators(selectedMonths);
   } catch {
     gridEl.innerHTML = `<div class="card-error">経済指標を取得できませんでした</div>`;
     return;
@@ -112,4 +115,18 @@ async function loadEconIndicators() {
   }
 }
 
+function setupPeriodSelector() {
+  const buttons = periodSelectorEl.querySelectorAll("button");
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const months = Number(button.dataset.months);
+      if (months === selectedMonths) return;
+      selectedMonths = months;
+      buttons.forEach((b) => b.classList.toggle("active", b === button));
+      loadEconIndicators();
+    });
+  });
+}
+
+setupPeriodSelector();
 loadEconIndicators();

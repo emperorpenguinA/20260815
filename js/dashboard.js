@@ -7,9 +7,11 @@ let watchlist = loadWatchlist();
 let loadGeneration = 0;
 let searchGeneration = 0;
 let searchDebounceTimer = null;
+let selectedRange = "3mo";
 
 const SEARCH_DEBOUNCE_MS = 300;
 const SEARCH_MIN_LENGTH = 2;
+const RANGE_LABELS = { "1mo": "1ヶ月", "3mo": "3ヶ月", "6mo": "6ヶ月", "1y": "1年" };
 
 const gridEl = document.getElementById("watchlist-grid");
 const searchInputEl = document.getElementById("search-input");
@@ -17,6 +19,7 @@ const searchButtonEl = document.getElementById("search-button");
 const searchResultsEl = document.getElementById("search-results");
 const refreshButtonEl = document.getElementById("refresh-button");
 const pageBannerEl = document.getElementById("page-banner");
+const chartRangeSelectorEl = document.getElementById("chart-range-selector");
 
 function cardId(symbol) {
   return `card-${symbol.replace(/[^a-zA-Z0-9]/g, "_")}`;
@@ -110,7 +113,8 @@ function renderCardBody(symbol, quote, points) {
     const min = Math.min(...closes);
     const max = Math.max(...closes);
     const currencyLabel = quote.currency ? ` ${quote.currency}` : "";
-    chartCaptionEl.textContent = `3ヶ月: ${formatNumber(min)} 〜 ${formatNumber(max)}${currencyLabel}`;
+    const rangeLabel = RANGE_LABELS[selectedRange] || selectedRange;
+    chartCaptionEl.textContent = `${rangeLabel}: ${formatNumber(min)} 〜 ${formatNumber(max)}${currencyLabel}`;
   }
 
   initTooltips(body);
@@ -120,7 +124,7 @@ async function refreshCard(item, generation, quote) {
   try {
     let points = [];
     try {
-      const chart = await fetchChart(item.symbol, "3mo", "1d");
+      const chart = await fetchChart(item.symbol, selectedRange, "1d");
       points = chart.points;
     } catch {
       points = [];
@@ -239,5 +243,18 @@ searchInputEl.addEventListener("keydown", (event) => {
 searchInputEl.addEventListener("input", handleSearchInput);
 refreshButtonEl.addEventListener("click", loadData);
 
+function setupChartRangeSelector() {
+  const buttons = chartRangeSelectorEl.querySelectorAll("button");
+  buttons.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (button.dataset.range === selectedRange) return;
+      selectedRange = button.dataset.range;
+      buttons.forEach((b) => b.classList.toggle("active", b === button));
+      loadData();
+    });
+  });
+}
+
+setupChartRangeSelector();
 renderGrid();
 loadData();
