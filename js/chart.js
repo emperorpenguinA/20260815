@@ -152,3 +152,115 @@ export function renderSparkline(container, points, width = WIDTH, height = HEIGH
     }
   });
 }
+
+function pointsToDualCoordinates(points, width = WIDTH, height = HEIGHT, padding = PADDING) {
+  if (!points || points.length === 0) return { actual: [], ppp: [] };
+
+  const allValues = points.flatMap((p) => [p.actual, p.ppp]).filter((v) => typeof v === "number");
+  const min = Math.min(...allValues);
+  const max = Math.max(...allValues);
+  const range = max - min || 1;
+
+  const stepX = (width - padding * 2) / Math.max(points.length - 1, 1);
+  const toY = (value) => height - padding - ((value - min) / range) * (height - padding * 2);
+
+  const actual = points.map((point, index) => ({
+    x: padding + index * stepX,
+    y: toY(point.actual),
+    date: point.date,
+    value: point.actual,
+  }));
+  const ppp = points.map((point, index) => ({
+    x: padding + index * stepX,
+    y: toY(point.ppp),
+    date: point.date,
+    value: point.ppp,
+  }));
+
+  return { actual, ppp };
+}
+
+function coordsToPath(coords) {
+  return coords
+    .map((coord, index) => `${index === 0 ? "M" : "L"}${coord.x.toFixed(2)},${coord.y.toFixed(2)}`)
+    .join(" ");
+}
+
+function showComparisonPoint(svg, indicator, actualCoord, pppCoord, actualLabel, pppLabel, logicalWidth, logicalHeight) {
+  const tooltip = ensureTooltipEl();
+  const rect = svg.getBoundingClientRect();
+  const scaleX = logicalWidth === 0 ? 1 : rect.width / logicalWidth;
+  const scaleY = logicalHeight === 0 ? 1 : rect.height / logicalHeight;
+
+  indicator.setAttribute("cx", actualCoord.x.toFixed(2));
+  indicator.setAttribute("cy", actualCoord.y.toFixed(2));
+  indicator.style.display = "";
+
+  tooltip.textContent = `${actualCoord.date}: ${actualLabel} ${formatMarkerValue(actualCoord.value)} / ${pppLabel} ${formatMarkerValue(pppCoord.value)}`;
+  tooltip.hidden = false;
+  tooltip.style.left = `${rect.left + actualCoord.x * scaleX}px`;
+  tooltip.style.top = `${rect.top + actualCoord.y * scaleY}px`;
+
+  activeSvg = svg;
+}
+
+export function renderComparisonChart(container, points, options = {}) {
+  const { width = WIDTH, height = HEIGHT, actualLabel = "実勢", pppLabel = "PPP" } = options;
+
+  container.innerHTML = "";
+  if (!points || points.length === 0) {
+    return;
+  }
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("width", "100%");
+  svg.setAttribute("height", String(height));
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.style.touchAction = "pan-y";
+
+  const { actual: actualCoords, ppp: pppCoords } = pointsToDualCoordinates(points, width, height);
+
+  const pppPath = document.createElementNS(SVG_NS, "path");
+  pppPath.setAttribute("d", coordsToPath(pppCoords));
+  pppPath.setAttribute("stroke", "var(--color-muted)");
+  pppPath.setAttribute("fill", "none");
+  pppPath.setAttribute("stroke-width", "2");
+  pppPath.setAttribute("stroke-dasharray", "4 3");
+
+  const actualPath = document.createElementNS(SVG_NS, "path");
+  actualPath.setAttribute("d", coordsToPath(actualCoords));
+  actualPath.setAttribute("stroke", "var(--color-accent)");
+  actualPath.setAttribute("fill", "none");
+  actualPath.setAttribute("stroke-width", "2");
+
+  const indicator = document.createElementNS(SVG_NS, "circle");
+  indicator.setAttribute("class", "chart-indicator");
+  indicator.setAttribute("r", String(INDICATOR_RADIUS));
+  indicator.setAttribute("fill", "var(--color-accent)");
+  indicator.style.display = "none";
+
+  svg.appendChild(pppPath);
+  svg.appendChild(actualPath);
+  svg.appendChild(indicator);
+  container.appendChild(svg);
+
+  function handlePointerActivity(event) {
+    const nearestActual = nearestCoord(actualCoords, svg, event.clientX, width);
+    const index = actualCoords.indexOf(nearestActual);
+    const matchingPpp = pppCoords[index];
+    showComparisonPoint(svg, indicator, nearestActual, matchingPpp, actualLabel, pppLabel, width, height);
+  }
+
+  svg.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    svg.setPointerCapture(event.pointerId);
+    handlePointerActivity(event);
+  });
+  svg.addEventListener("pointermove", handlePointerActivity);
+  svg.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse") {
+      hideTooltip();
+    }
+  });
+}
