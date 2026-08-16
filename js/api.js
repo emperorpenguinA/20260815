@@ -22,6 +22,7 @@ export function searchSymbols(query) {
   return getJson(`/api/search?q=${encodeURIComponent(query)}`);
 }
 
-export function fetchEconIndicators() {
-  return getJson("/api/econ");
+export function fetchEconIndicators(months) {
+  const query = months ? `?months=${encodeURIComponent(months)}` : "";
+  return getJson(`/api/econ${query}`);
 }

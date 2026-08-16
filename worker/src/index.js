@@ -45,7 +45,7 @@ export default {
       return handleSearch(url);
     }
     if (url.pathname === "/api/econ") {
-      return handleEcon(env);
+      return handleEcon(env, parseEconMonths(url));
     }
 
     return jsonResponse({ error: true, message: "not found" }, 404);
@@ -150,12 +150,29 @@ async function fetchJapanSearchSupplement(query) {
   }
 }
 
-const ECON_RECENT_MONTHS = 36;
+const ECON_DEFAULT_MONTHS = 36;
+const ECON_MIN_MONTHS = 6;
+const ECON_MAX_MONTHS = 600;
 
-async function handleEcon(env) {
+// フロントエンドの期間選択(1年/3年/5年/10年)から渡される。範囲外・不正な
+// 値は既定の3年にフォールバックする。
+function parseEconMonths(url) {
+  const param = url.searchParams.get("months");
+  // searchParams.get() returns null when absent, and Number(null) is 0
+  // (not NaN) — check for the missing case explicitly before coercing.
+  if (param === null) return ECON_DEFAULT_MONTHS;
+
+  const raw = Number(param);
+  if (!Number.isFinite(raw) || !Number.isInteger(raw)) {
+    return ECON_DEFAULT_MONTHS;
+  }
+  return Math.min(ECON_MAX_MONTHS, Math.max(ECON_MIN_MONTHS, raw));
+}
+
+async function handleEcon(env, months = ECON_DEFAULT_MONTHS) {
   const now = new Date();
   const endDate = formatYyyymm(now);
-  const startDate = formatYyyymm(new Date(now.getFullYear(), now.getMonth() - ECON_RECENT_MONTHS, 1));
+  const startDate = formatYyyymm(new Date(now.getFullYear(), now.getMonth() - months, 1));
 
   const jobs = [
     {
@@ -212,7 +229,7 @@ async function handleEcon(env) {
     jobs.map(async (job) => {
       try {
         const { points: rawPoints } = await job.run();
-        const points = takeRecentMonths(rawPoints, ECON_RECENT_MONTHS);
+        const points = takeRecentMonths(rawPoints, months);
         return {
           id: job.id,
           country: job.country,
