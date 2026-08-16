@@ -13,13 +13,13 @@ export const PPP_CURRENCIES = [
     currency: "EUR",
     iso3: "DEU",
     yahooSymbol: "EURUSD=X",
-    pair: "EUR/USD",
+    pair: "USD/EUR",
     invert: true,
     note: "ユーロ圏の代表値としてドイツの数値を使用",
   },
-  { currency: "GBP", iso3: "GBR", yahooSymbol: "GBPUSD=X", pair: "GBP/USD", invert: true, note: null },
+  { currency: "GBP", iso3: "GBR", yahooSymbol: "GBPUSD=X", pair: "USD/GBP", invert: true, note: null },
   { currency: "CNY", iso3: "CHN", yahooSymbol: "CNY=X", pair: "USD/CNY", invert: false, note: null },
-  { currency: "AUD", iso3: "AUS", yahooSymbol: "AUDUSD=X", pair: "AUD/USD", invert: true, note: null },
+  { currency: "AUD", iso3: "AUS", yahooSymbol: "AUDUSD=X", pair: "USD/AUD", invert: true, note: null },
   { currency: "CAD", iso3: "CAN", yahooSymbol: "CAD=X", pair: "USD/CAD", invert: false, note: null },
 ];
 

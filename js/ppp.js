@@ -48,7 +48,7 @@ function renderPppCard(indicator) {
   const changeClass = typeof changeValue === "number" ? (changeValue >= 0 ? "positive" : "negative") : "";
   const valuationText =
     typeof changeValue === "number"
-      ? `理論値より${formatNumber(Math.abs(changeValue))}% ${changeValue >= 0 ? "割安" : "割高"}`
+      ? `${indicator.currency}は理論値より${formatNumber(Math.abs(changeValue))}%${changeValue >= 0 ? "割安" : "割高"}`
       : "-";
 
   card.innerHTML = `

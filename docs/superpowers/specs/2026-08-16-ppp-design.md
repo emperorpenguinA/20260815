@@ -75,7 +75,7 @@ World Bank側のPPP値が「1国際ドルあたりの現地通貨」なので、
     },
     {
       "currency": "EUR",
-      "pair": "EUR/USD",
+      "pair": "USD/EUR",
       "points": [...],
       "latestActual": 0.864,
       "latestPpp": 0.71,

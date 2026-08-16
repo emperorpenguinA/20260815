@@ -25,6 +25,18 @@ test("PPP_CURRENCIES lists exactly the 6 target currencies with the expected inv
   assert.match(byCurrency.EUR.note, /ドイツ/);
 });
 
+test("PPP_CURRENCIES pair labels are all expressed as \"USD/<currency>\", matching the LCU-per-USD direction every rate is normalized to", () => {
+  const pairs = Object.fromEntries(PPP_CURRENCIES.map((c) => [c.currency, c.pair]));
+  assert.deepEqual(pairs, {
+    JPY: "USD/JPY",
+    EUR: "USD/EUR",
+    GBP: "USD/GBP",
+    CNY: "USD/CNY",
+    AUD: "USD/AUD",
+    CAD: "USD/CAD",
+  });
+});
+
 test("normalizeWorldBankPpp returns a {year: value} map for the given country, filtering out null years and other countries", () => {
   const raw = [
     { page: 1 },
