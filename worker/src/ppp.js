@@ -1,10 +1,10 @@
 const WORLD_BANK_BASE = "https://api.worldbank.org/v2/country";
 const PPP_INDICATOR = "PA.NUS.PPP";
 
-// 対米ドルで比較する6通貨。World BankのEMU(ユーロ圏集計)はPA.NUS.PPPを
+// 対米ドルで比較する10通貨。World BankのEMU(ユーロ圏集計)はPA.NUS.PPPを
 // 提供しない(実データで確認済み、valueが常にnull)ため、EURはドイツの値を
 // 代表値として使う。Yahoo FinanceのFXシンボルは通貨によって向きが異なり、
-// JPY=X/CNY=X/CAD=Xは「1ドル=現地通貨」だが、EURUSD=X/GBPUSD=X/AUDUSD=Xは
+// JPY=X/CNY=X/CAD=X/TRY=X/MXN=X/ZAR=Xは「1ドル=現地通貨」だが、EURUSD=X/GBPUSD=X/AUDUSD=X/NZDUSD=Xは
 // 「1現地通貨=何ドル」の逆向きで返る(実データで確認済み)。invertはその
 // 逆数変換が必要かどうかを示す。
 export const PPP_CURRENCIES = [
