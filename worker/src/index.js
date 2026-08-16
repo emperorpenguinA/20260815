@@ -22,12 +22,14 @@ import {
 } from "./econ.js";
 import {
   PPP_CURRENCIES,
+  PPP_JPY_CROSS_CURRENCIES,
   fetchWorldBankPpp,
   normalizeWorldBankPpp,
   latestPppEntry,
   forwardFillPpp,
   toLcuPerUsd,
   computeOverUndervaluedPercent,
+  buildCrossPppByYear,
 } from "./ppp.js";
 
 const CORS_HEADERS = {
@@ -277,53 +279,110 @@ async function handlePpp(months = MONTHS_DEFAULT) {
   }
 
   const indicators = await Promise.all(
-    PPP_CURRENCIES.map(async (config) => {
-      try {
-        if (pppFetchError) throw pppFetchError;
-
-        const pppByYear = normalizeWorldBankPpp(pppRaw, config.iso3);
-        const latest = latestPppEntry(pppByYear);
-        if (!latest) {
-          throw new Error(`PPPデータが見つかりません: ${config.iso3}`);
-        }
-
-        const chartRaw = await fetchChart(config.yahooSymbol, "10y", "1mo");
-        const { points: rawPoints } = normalizeChart(chartRaw);
-        const monthlyPoints = takeRecentMonths(
-          rawPoints
-            .map((p) => ({
-              date: typeof p.date === "string" ? p.date.slice(0, 7) : null,
-              value: toLcuPerUsd(p.close, config.invert),
-            }))
-            .filter((p) => p.date !== null && typeof p.value === "number"),
-          months
-        );
-
-        const monthDates = monthlyPoints.map((p) => p.date);
-        const pppSeries = forwardFillPpp(monthDates, pppByYear);
-        const points = monthlyPoints
-          .map((p, i) => ({ date: p.date, actual: p.value, ppp: pppSeries[i] }))
-          .filter((p) => typeof p.ppp === "number");
-
-        const latestActual = monthlyPoints.length > 0 ? monthlyPoints[monthlyPoints.length - 1].value : null;
-
-        return {
-          currency: config.currency,
-          pair: config.pair,
-          points,
-          latestActual,
-          latestPpp: latest.value,
-          pppYear: latest.year,
-          overUndervaluedPercent: computeOverUndervaluedPercent(latestActual, latest.value),
-          note: config.note,
-        };
-      } catch (err) {
-        return { currency: config.currency, pair: config.pair, error: true, message: err.message };
-      }
-    })
+    PPP_CURRENCIES.map((config) => buildPppIndicator(config, pppRaw, pppFetchError, months))
   );
 
-  return jsonResponse({ indicators });
+  const crossIndicators = await Promise.all(
+    PPP_JPY_CROSS_CURRENCIES.map((config) => buildJpyCrossIndicator(config, pppRaw, pppFetchError, months))
+  );
+
+  return jsonResponse({ indicators, crossIndicators });
+}
+
+async function buildPppIndicator(config, pppRaw, pppFetchError, months) {
+  try {
+    if (pppFetchError) throw pppFetchError;
+
+    const pppByYear = normalizeWorldBankPpp(pppRaw, config.iso3);
+    const latest = latestPppEntry(pppByYear);
+    if (!latest) {
+      throw new Error(`PPPデータが見つかりません: ${config.iso3}`);
+    }
+
+    const chartRaw = await fetchChart(config.yahooSymbol, "10y", "1mo");
+    const { points: rawPoints } = normalizeChart(chartRaw);
+    const monthlyPoints = takeRecentMonths(
+      rawPoints
+        .map((p) => ({
+          date: typeof p.date === "string" ? p.date.slice(0, 7) : null,
+          value: toLcuPerUsd(p.close, config.invert),
+        }))
+        .filter((p) => p.date !== null && typeof p.value === "number"),
+      months
+    );
+
+    const monthDates = monthlyPoints.map((p) => p.date);
+    const pppSeries = forwardFillPpp(monthDates, pppByYear);
+    const points = monthlyPoints
+      .map((p, i) => ({ date: p.date, actual: p.value, ppp: pppSeries[i] }))
+      .filter((p) => typeof p.ppp === "number");
+
+    const latestActual = monthlyPoints.length > 0 ? monthlyPoints[monthlyPoints.length - 1].value : null;
+
+    return {
+      currency: config.currency,
+      pair: config.pair,
+      points,
+      latestActual,
+      latestPpp: latest.value,
+      pppYear: latest.year,
+      overUndervaluedPercent: computeOverUndervaluedPercent(latestActual, latest.value),
+      note: config.note,
+    };
+  } catch (err) {
+    return { currency: config.currency, pair: config.pair, error: true, message: err.message };
+  }
+}
+
+// 対米ドル比較(buildPppIndicator)と違い、PPP理論レートはWorld Bankの
+// 生データを日本円と対象通貨それぞれについて正規化してから比率を取る
+// (buildCrossPppByYear)。実勢レートはYahooの直接クロスシンボルの値を
+// そのまま使い、toLcuPerUsdによる逆数変換は行わない。
+async function buildJpyCrossIndicator(config, pppRaw, pppFetchError, months) {
+  try {
+    if (pppFetchError) throw pppFetchError;
+
+    const jpyPppByYear = normalizeWorldBankPpp(pppRaw, "JPN");
+    const quotePppByYear = normalizeWorldBankPpp(pppRaw, config.iso3);
+    const crossPppByYear = buildCrossPppByYear(jpyPppByYear, quotePppByYear);
+    const latest = latestPppEntry(crossPppByYear);
+    if (!latest) {
+      throw new Error(`PPPデータが見つかりません: JPN/${config.iso3}`);
+    }
+
+    const chartRaw = await fetchChart(config.yahooSymbol, "10y", "1mo");
+    const { points: rawPoints } = normalizeChart(chartRaw);
+    const monthlyPoints = takeRecentMonths(
+      rawPoints
+        .map((p) => ({
+          date: typeof p.date === "string" ? p.date.slice(0, 7) : null,
+          value: typeof p.close === "number" ? p.close : null,
+        }))
+        .filter((p) => p.date !== null && typeof p.value === "number"),
+      months
+    );
+
+    const monthDates = monthlyPoints.map((p) => p.date);
+    const pppSeries = forwardFillPpp(monthDates, crossPppByYear);
+    const points = monthlyPoints
+      .map((p, i) => ({ date: p.date, actual: p.value, ppp: pppSeries[i] }))
+      .filter((p) => typeof p.ppp === "number");
+
+    const latestActual = monthlyPoints.length > 0 ? monthlyPoints[monthlyPoints.length - 1].value : null;
+
+    return {
+      currency: config.currency,
+      pair: config.pair,
+      points,
+      latestActual,
+      latestPpp: latest.value,
+      pppYear: latest.year,
+      overUndervaluedPercent: computeOverUndervaluedPercent(latestActual, latest.value),
+      note: config.note,
+    };
+  } catch (err) {
+    return { currency: config.currency, pair: config.pair, error: true, message: err.message };
+  }
 }
 
 function formatYyyymm(date) {
