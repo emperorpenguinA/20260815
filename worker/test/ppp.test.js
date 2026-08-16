@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   PPP_CURRENCIES,
+  PPP_JPY_CROSS_CURRENCIES,
   fetchWorldBankPpp,
   normalizeWorldBankPpp,
   latestPppEntry,
   forwardFillPpp,
   toLcuPerUsd,
   computeOverUndervaluedPercent,
+  buildCrossPppByYear,
 } from "../src/ppp.js";
 
 test("PPP_CURRENCIES lists exactly the 6 target currencies with the expected invert flags", () => {
@@ -141,4 +143,43 @@ test("fetchWorldBankPpp throws a clear error when the upstream response is not o
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("PPP_JPY_CROSS_CURRENCIES lists exactly the 5 non-JPY target currencies, each compared directly against JPY", () => {
+  const byCurrency = Object.fromEntries(PPP_JPY_CROSS_CURRENCIES.map((c) => [c.currency, c]));
+  assert.equal(PPP_JPY_CROSS_CURRENCIES.length, 5);
+  assert.deepEqual(Object.keys(byCurrency).sort(), ["AUD", "CAD", "CNY", "EUR", "GBP"]);
+  // EUR still uses Germany as the euro-area proxy, same as the USD-based comparison.
+  assert.equal(byCurrency.EUR.iso3, "DEU");
+  assert.match(byCurrency.EUR.note, /ドイツ/);
+  assert.equal(byCurrency.GBP.note, null);
+});
+
+test("PPP_JPY_CROSS_CURRENCIES pair labels and Yahoo symbols use the direct JPY-cross convention (e.g. EUR/JPY via EURJPY=X)", () => {
+  const byCurrency = Object.fromEntries(PPP_JPY_CROSS_CURRENCIES.map((c) => [c.currency, c]));
+  assert.equal(byCurrency.EUR.pair, "EUR/JPY");
+  assert.equal(byCurrency.EUR.yahooSymbol, "EURJPY=X");
+  assert.equal(byCurrency.GBP.pair, "GBP/JPY");
+  assert.equal(byCurrency.GBP.yahooSymbol, "GBPJPY=X");
+  assert.equal(byCurrency.CNY.pair, "CNY/JPY");
+  assert.equal(byCurrency.CNY.yahooSymbol, "CNYJPY=X");
+  assert.equal(byCurrency.AUD.pair, "AUD/JPY");
+  assert.equal(byCurrency.AUD.yahooSymbol, "AUDJPY=X");
+  assert.equal(byCurrency.CAD.pair, "CAD/JPY");
+  assert.equal(byCurrency.CAD.yahooSymbol, "CADJPY=X");
+});
+
+test("buildCrossPppByYear computes the base/quote ratio for years present in both maps", () => {
+  const result = buildCrossPppByYear({ 2024: 94.462599, 2025: 97.08 }, { 2024: 0.700862, 2025: 0.70998 });
+  assert.ok(Math.abs(result[2024] - 94.462599 / 0.700862) < 1e-9);
+  assert.ok(Math.abs(result[2025] - 97.08 / 0.70998) < 1e-9);
+});
+
+test("buildCrossPppByYear excludes years present in only one of the two maps", () => {
+  const result = buildCrossPppByYear({ 2023: 90, 2024: 95, 2025: 97 }, { 2024: 0.7 });
+  assert.deepEqual(Object.keys(result), ["2024"]);
+});
+
+test("buildCrossPppByYear returns an empty map when there are no years in common", () => {
+  assert.deepEqual(buildCrossPppByYear({ 2023: 90 }, { 2025: 0.7 }), {});
 });

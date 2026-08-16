@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import handler from "../src/index.js";
 import {
   PPP_CURRENCIES,
+  PPP_JPY_CROSS_CURRENCIES,
 } from "../src/ppp.js";
 
 test("handleQuote requests a 1-day range from upstream (so previousClose is yesterday's close, not N days ago)", async () => {
@@ -450,6 +451,11 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     "CNY=X": fakeChartResponse("CNY=X", "CNY", [6.6, 6.7, 6.7322]),
     "AUDUSD=X": fakeChartResponse("AUDUSD=X", "USD", [0.7, 0.71, 0.7087]),
     "CAD=X": fakeChartResponse("CAD=X", "CAD", [1.35, 1.37, 1.3872]),
+    "EURJPY=X": fakeChartResponse("EURJPY=X", "JPY", [180, 182, 184.365]),
+    "GBPJPY=X": fakeChartResponse("GBPJPY=X", "JPY", [210, 212, 215.667]),
+    "CNYJPY=X": fakeChartResponse("CNYJPY=X", "JPY", [23, 23.3, 23.595]),
+    "AUDJPY=X": fakeChartResponse("AUDJPY=X", "JPY", [110, 111, 112.879]),
+    "CADJPY=X": fakeChartResponse("CADJPY=X", "JPY", [113, 114, 114.818]),
   };
   globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
 
@@ -473,6 +479,61 @@ test("handlePpp aggregates all 6 currencies, converts EUR/GBP/AUD via reciprocal
     // EURUSD=X's last close is 1.1573 (USD per EUR); inverted, actual should be 1/1.1573.
     assert.ok(Math.abs(eur.latestActual - 1 / 1.1573) < 1e-6);
     assert.match(eur.note, /ドイツ/);
+
+    assert.equal(body.crossIndicators.length, 5);
+
+    const eurJpy = body.crossIndicators.find((i) => i.currency === "EUR");
+    assert.equal(eurJpy.error, undefined);
+    assert.equal(eurJpy.pair, "EUR/JPY");
+    // EURJPY=X's last close is 184.365 (JPY per EUR); used directly, no inversion.
+    assert.equal(eurJpy.latestActual, 184.365);
+    // PPP-implied EUR/JPY = JPY's PPP factor ÷ EUR's PPP factor = 97.08 / 0.71.
+    assert.ok(Math.abs(eurJpy.latestPpp - 97.08 / 0.71) < 1e-6);
+    assert.equal(eurJpy.pppYear, 2025);
+    assert.match(eurJpy.note, /ドイツ/);
+
+    const cnyJpy = body.crossIndicators.find((i) => i.currency === "CNY");
+    assert.equal(cnyJpy.error, undefined);
+    assert.equal(cnyJpy.pair, "CNY/JPY");
+    assert.equal(cnyJpy.latestActual, 23.595);
+    assert.equal(cnyJpy.note, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handlePpp requests World Bank PPP data for the union of PPP_CURRENCIES and PPP_JPY_CROSS_CURRENCIES iso3 codes", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  const worldBank = fakeWorldBankResponse(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => ({ iso3: c.iso3, date: 2025, value: 100 }))
+  );
+  const chartsBySymbol = Object.fromEntries(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => [
+      c.yahooSymbol,
+      fakeChartResponse(c.yahooSymbol, c.currency, [100, 101, 102]),
+    ])
+  );
+  const innerFetch = mockPppFetch({ worldBank, chartsBySymbol });
+  globalThis.fetch = async (url, ...rest) => {
+    requestedUrls.push(url.toString());
+    return innerFetch(url, ...rest);
+  };
+
+  try {
+    const request = new Request("https://example.com/api/ppp");
+    const response = await handler.fetch(request);
+    await response.json();
+
+    const worldBankUrl = requestedUrls.find((u) => u.includes("api.worldbank.org"));
+    assert.ok(worldBankUrl, "expected a World Bank request URL to be captured");
+
+    const unionIso3 = [
+      ...new Set([...PPP_CURRENCIES.map((c) => c.iso3), ...PPP_JPY_CROSS_CURRENCIES.map((c) => c.iso3)]),
+    ];
+    for (const iso3 of unionIso3) {
+      assert.ok(worldBankUrl.includes(iso3), `expected World Bank URL to include ${iso3}`);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -515,6 +576,9 @@ test("handlePpp marks every currency as failed when the World Bank request itsel
 
     assert.equal(body.indicators.length, 6);
     assert.ok(body.indicators.every((i) => i.error === true));
+
+    assert.equal(body.crossIndicators.length, 5);
+    assert.ok(body.crossIndicators.every((i) => i.error === true));
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -538,6 +602,58 @@ test("handlePpp truncates points to the ?months= query param", async () => {
 
     const jpy = body.indicators.find((i) => i.currency === "JPY");
     assert.equal(jpy.points.length, 6);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handlePpp isolates a single JPY-cross currency's chart failure without affecting other cross currencies or the USD-based indicators", async () => {
+  const originalFetch = globalThis.fetch;
+  const worldBank = fakeWorldBankResponse(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => ({ iso3: c.iso3, date: 2025, value: c.currency === "JPY" ? 100 : 50 }))
+  );
+  const chartsBySymbol = Object.fromEntries(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => [c.yahooSymbol, fakeChartResponse(c.yahooSymbol, c.currency, [100, 101, 102])])
+  );
+  chartsBySymbol["EURJPY=X"] = new Error("network down");
+  globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
+
+  try {
+    const request = new Request("https://example.com/api/ppp");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    const eurJpy = body.crossIndicators.find((i) => i.currency === "EUR");
+    assert.equal(eurJpy.error, true);
+
+    const gbpJpy = body.crossIndicators.find((i) => i.currency === "GBP");
+    assert.equal(gbpJpy.error, undefined);
+
+    const jpyUsd = body.indicators.find((i) => i.currency === "JPY");
+    assert.equal(jpyUsd.error, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("handlePpp truncates crossIndicators' points to the ?months= query param, same as the USD-based indicators", async () => {
+  const originalFetch = globalThis.fetch;
+  const worldBank = fakeWorldBankResponse(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => ({ iso3: c.iso3, date: 2025, value: c.currency === "JPY" ? 100 : 50 }))
+  );
+  const closes = Array.from({ length: 24 }, (_, i) => 100 + i);
+  const chartsBySymbol = Object.fromEntries(
+    [...PPP_CURRENCIES, ...PPP_JPY_CROSS_CURRENCIES].map((c) => [c.yahooSymbol, fakeChartResponse(c.yahooSymbol, c.currency, closes)])
+  );
+  globalThis.fetch = mockPppFetch({ worldBank, chartsBySymbol });
+
+  try {
+    const request = new Request("https://example.com/api/ppp?months=6");
+    const response = await handler.fetch(request);
+    const body = await response.json();
+
+    const eurJpy = body.crossIndicators.find((i) => i.currency === "EUR");
+    assert.equal(eurJpy.points.length, 6);
   } finally {
     globalThis.fetch = originalFetch;
   }
